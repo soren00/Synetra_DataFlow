@@ -1,0 +1,695 @@
+{
+  "6.1:skill": {
+    "summary": {
+      "arm": "skill",
+      "n": 15,
+      "errors": 0,
+      "first_pass_rate": 1.0,
+      "final_compliant_rate": 1.0,
+      "checks_ok_rate": 1.0,
+      "repair_rounds": 0
+    },
+    "rows": [
+      {
+        "id": "T01",
+        "error": "",
+        "first_pass": true,
+        "repaired": false,
+        "issues": 0,
+        "checks_ok": true,
+        "exprs": [
+          "strip(customer_name)"
+        ],
+        "first_exprs": [
+          "strip(customer_name)"
+        ],
+        "kinds": {
+          "id": "direct",
+          "order_no": "direct",
+          "customer_name": "expression"
+        }
+      },
+      {
+        "id": "T02",
+        "error": "",
+        "first_pass": true,
+        "repaired": false,
+        "issues": 0,
+        "checks_ok": true,
+        "exprs": [
+          "strip(phone)",
+          "round(amount, 2)"
+        ],
+        "first_exprs": [
+          "strip(phone)",
+          "round(amount, 2)"
+        ],
+        "kinds": {
+          "id": "direct",
+          "order_no": "direct",
+          "customer_name": "direct",
+          "phone": "expression",
+          "amount": "expression",
+          "status": "direct",
+          "create_time": "direct",
+          "update_time": "direct"
+        }
+      },
+      {
+        "id": "T03",
+        "error": "",
+        "first_pass": true,
+        "repaired": false,
+        "issues": 0,
+        "checks_ok": true,
+        "exprs": [
+          "upper(customer_name)"
+        ],
+        "first_exprs": [
+          "upper(customer_name)"
+        ],
+        "kinds": {
+          "id": "direct",
+          "order_no": "direct",
+          "customer_name": "expression",
+          "phone": "direct",
+          "amount": "direct",
+          "status": "direct",
+          "create_time": "direct",
+          "update_time": "direct"
+        }
+      },
+      {
+        "id": "T04",
+        "error": "",
+        "first_pass": true,
+        "repaired": false,
+        "issues": 0,
+        "checks_ok": true,
+        "exprs": [
+          "concat(id, '-', order_no)"
+        ],
+        "first_exprs": [
+          "concat(id, '-', order_no)"
+        ],
+        "kinds": {
+          "id": "expression",
+          "order_no": "direct",
+          "customer_name": "direct",
+          "phone": "direct",
+          "amount": "direct",
+          "status": "direct",
+          "create_time": "direct",
+          "update_time": "direct"
+        }
+      },
+      {
+        "id": "T05",
+        "error": "",
+        "first_pass": true,
+        "repaired": false,
+        "issues": 0,
+        "checks_ok": true,
+        "exprs": [],
+        "first_exprs": [],
+        "kinds": {
+          "id": "direct",
+          "order_no": "direct",
+          "customer_name": "direct",
+          "phone": "direct",
+          "amount": "direct",
+          "status": "direct",
+          "create_time": "null_fill",
+          "update_time": "direct"
+        }
+      },
+      {
+        "id": "T06",
+        "error": "",
+        "first_pass": true,
+        "repaired": false,
+        "issues": 0,
+        "checks_ok": true,
+        "exprs": [],
+        "first_exprs": [],
+        "kinds": {
+          "id": "direct",
+          "name": "direct",
+          "qty": "cast",
+          "active": "direct"
+        }
+      },
+      {
+        "id": "T07",
+        "error": "",
+        "first_pass": true,
+        "repaired": false,
+        "issues": 0,
+        "checks_ok": true,
+        "exprs": [],
+        "first_exprs": [],
+        "kinds": {
+          "id": "direct",
+          "name": "direct",
+          "qty": "direct",
+          "active": "null_fill"
+        }
+      },
+      {
+        "id": "T08",
+        "error": "",
+        "first_pass": true,
+        "repaired": false,
+        "issues": 0,
+        "checks_ok": true,
+        "exprs": [],
+        "first_exprs": [],
+        "kinds": {
+          "id": "direct",
+          "order_no": "direct",
+          "customer_name": "direct",
+          "phone": "direct",
+          "amount": "cast",
+          "status": "cast",
+          "create_time": "direct",
+          "update_time": "direct"
+        }
+      },
+      {
+        "id": "T09",
+        "error": "",
+        "first_pass": true,
+        "repaired": false,
+        "issues": 0,
+        "checks_ok": true,
+        "exprs": [
+          "concat(name, ':', description)"
+        ],
+        "first_exprs": [
+          "concat(name, ':', description)"
+        ],
+        "kinds": {
+          "id": "direct",
+          "product_no": "direct",
+          "name": "expression",
+          "description": "direct",
+          "price": "direct",
+          "stock": "direct",
+          "status": "direct",
+          "create_time": "direct",
+          "update_time": "direct"
+        }
+      },
+      {
+        "id": "T10",
+        "error": "",
+        "first_pass": true,
+        "repaired": false,
+        "issues": 0,
+        "checks_ok": true,
+        "exprs": [],
+        "first_exprs": [],
+        "kinds": {
+          "id": "direct",
+          "product_no": "direct",
+          "name": "direct",
+          "description": "direct",
+          "price": "direct",
+          "stock": "null_fill",
+          "status": "direct",
+          "create_time": "direct",
+          "update_time": "direct"
+        }
+      },
+      {
+        "id": "T11",
+        "error": "",
+        "first_pass": true,
+        "repaired": false,
+        "issues": 0,
+        "checks_ok": true,
+        "exprs": [
+          "'paid' if status == 1 else 'unpaid'"
+        ],
+        "first_exprs": [
+          "'paid' if status == 1 else 'unpaid'"
+        ],
+        "kinds": {
+          "id": "direct",
+          "order_no": "direct",
+          "customer_name": "direct",
+          "phone": "direct",
+          "amount": "direct",
+          "status": "expression",
+          "create_time": "direct",
+          "update_time": "direct"
+        }
+      },
+      {
+        "id": "T12",
+        "error": "",
+        "first_pass": true,
+        "repaired": false,
+        "issues": 0,
+        "checks_ok": true,
+        "exprs": [
+          "concat(order_no, '/', id)",
+          "strip(customer_name)"
+        ],
+        "first_exprs": [
+          "concat(order_no, '/', id)",
+          "strip(customer_name)"
+        ],
+        "kinds": {
+          "order_no": "direct",
+          "id": "direct",
+          "customer_name": "expression",
+          "phone": "direct",
+          "amount": "direct",
+          "status": "direct",
+          "create_time": "direct",
+          "update_time": "direct"
+        }
+      },
+      {
+        "id": "T13",
+        "error": "",
+        "first_pass": true,
+        "repaired": false,
+        "issues": 0,
+        "checks_ok": true,
+        "exprs": [
+          "concat(customer_name[0], '*', customer_name[2:])",
+          "concat(phone[0:3], '****', phone[7:])"
+        ],
+        "first_exprs": [
+          "concat(customer_name[0], '*', customer_name[2:])",
+          "concat(phone[0:3], '****', phone[7:])"
+        ],
+        "kinds": {
+          "id": "direct",
+          "order_no": "direct",
+          "customer_name": "expression",
+          "phone": "expression",
+          "amount": "direct",
+          "status": "direct",
+          "create_time": "direct",
+          "update_time": "direct"
+        }
+      },
+      {
+        "id": "T14",
+        "error": "",
+        "first_pass": true,
+        "repaired": false,
+        "issues": 0,
+        "checks_ok": true,
+        "exprs": [
+          "concat(customer_name[0], '*', customer_name[2:])"
+        ],
+        "first_exprs": [
+          "concat(customer_name[0], '*', customer_name[2:])"
+        ],
+        "kinds": {
+          "id": "direct",
+          "order_no": "direct",
+          "customer_name": "expression",
+          "phone": "direct",
+          "amount": "direct",
+          "status": "direct",
+          "create_time": "direct",
+          "update_time": "direct"
+        }
+      },
+      {
+        "id": "T15",
+        "error": "",
+        "first_pass": true,
+        "repaired": false,
+        "issues": 0,
+        "checks_ok": true,
+        "exprs": [
+          "concat(phone[0:3], '****', phone[7:])"
+        ],
+        "first_exprs": [
+          "concat(phone[0:3], '****', phone[7:])"
+        ],
+        "kinds": {
+          "id": "direct",
+          "order_no": "direct",
+          "customer_name": "direct",
+          "phone": "expression",
+          "amount": "direct",
+          "status": "direct",
+          "create_time": "direct",
+          "update_time": "direct"
+        }
+      }
+    ]
+  },
+  "6.1:baseline": {
+    "summary": {
+      "arm": "baseline",
+      "n": 15,
+      "errors": 0,
+      "first_pass_rate": 0.467,
+      "final_compliant_rate": 1.0,
+      "checks_ok_rate": 0.733,
+      "repair_rounds": 8
+    },
+    "rows": [
+      {
+        "id": "T01",
+        "error": "",
+        "first_pass": false,
+        "repaired": true,
+        "issues": 0,
+        "checks_ok": true,
+        "exprs": [
+          "strip(customer_name)"
+        ],
+        "first_exprs": [
+          "trim(customer_name)"
+        ],
+        "kinds": {
+          "id": "direct",
+          "order_no": "direct",
+          "customer_name": "expression"
+        }
+      },
+      {
+        "id": "T02",
+        "error": "",
+        "first_pass": false,
+        "repaired": true,
+        "issues": 0,
+        "checks_ok": true,
+        "exprs": [
+          "strip(phone)",
+          "round(amount, 2)"
+        ],
+        "first_exprs": [
+          "trim(phone)",
+          "round(amount, 2)"
+        ],
+        "kinds": {
+          "id": "direct",
+          "order_no": "direct",
+          "customer_name": "direct",
+          "phone": "expression",
+          "amount": "expression",
+          "status": "direct",
+          "create_time": "direct",
+          "update_time": "direct"
+        }
+      },
+      {
+        "id": "T03",
+        "error": "",
+        "first_pass": true,
+        "repaired": false,
+        "issues": 0,
+        "checks_ok": true,
+        "exprs": [
+          "upper(customer_name)"
+        ],
+        "first_exprs": [
+          "upper(customer_name)"
+        ],
+        "kinds": {
+          "id": "direct",
+          "order_no": "direct",
+          "customer_name": "expression",
+          "phone": "direct",
+          "amount": "direct",
+          "status": "direct",
+          "create_time": "direct",
+          "update_time": "direct"
+        }
+      },
+      {
+        "id": "T04",
+        "error": "",
+        "first_pass": true,
+        "repaired": false,
+        "issues": 0,
+        "checks_ok": true,
+        "exprs": [
+          "concat(id,'-',order_no)"
+        ],
+        "first_exprs": [
+          "concat(id,'-',order_no)"
+        ],
+        "kinds": {
+          "id": "expression",
+          "order_no": "direct",
+          "customer_name": "direct",
+          "phone": "direct",
+          "amount": "direct",
+          "status": "direct",
+          "create_time": "direct",
+          "update_time": "direct"
+        }
+      },
+      {
+        "id": "T05",
+        "error": "",
+        "first_pass": true,
+        "repaired": false,
+        "issues": 0,
+        "checks_ok": true,
+        "exprs": [],
+        "first_exprs": [],
+        "kinds": {
+          "id": "direct",
+          "order_no": "direct",
+          "customer_name": "direct",
+          "phone": "direct",
+          "amount": "direct",
+          "status": "direct",
+          "create_time": "null_fill",
+          "update_time": "direct"
+        }
+      },
+      {
+        "id": "T06",
+        "error": "",
+        "first_pass": true,
+        "repaired": false,
+        "issues": 0,
+        "checks_ok": true,
+        "exprs": [],
+        "first_exprs": [],
+        "kinds": {
+          "id": "direct",
+          "name": "direct",
+          "qty": "cast",
+          "active": "direct"
+        }
+      },
+      {
+        "id": "T07",
+        "error": "",
+        "first_pass": false,
+        "repaired": true,
+        "issues": 0,
+        "checks_ok": false,
+        "exprs": [
+          "int(active) if active else 0"
+        ],
+        "first_exprs": [
+          "COALESCE(CAST(active AS SIGNED), 0)"
+        ],
+        "kinds": {
+          "id": "direct",
+          "name": "direct",
+          "qty": "direct",
+          "active": "expression"
+        }
+      },
+      {
+        "id": "T08",
+        "error": "",
+        "first_pass": true,
+        "repaired": false,
+        "issues": 0,
+        "checks_ok": true,
+        "exprs": [],
+        "first_exprs": [],
+        "kinds": {
+          "id": "direct",
+          "order_no": "direct",
+          "customer_name": "direct",
+          "phone": "direct",
+          "amount": "cast",
+          "status": "cast",
+          "create_time": "direct",
+          "update_time": "direct"
+        }
+      },
+      {
+        "id": "T09",
+        "error": "",
+        "first_pass": true,
+        "repaired": false,
+        "issues": 0,
+        "checks_ok": true,
+        "exprs": [
+          "concat(name, ':', description)"
+        ],
+        "first_exprs": [
+          "concat(name, ':', description)"
+        ],
+        "kinds": {
+          "id": "direct",
+          "product_no": "direct",
+          "name": "expression",
+          "description": "direct",
+          "price": "direct",
+          "stock": "direct",
+          "status": "direct",
+          "create_time": "direct",
+          "update_time": "direct"
+        }
+      },
+      {
+        "id": "T10",
+        "error": "",
+        "first_pass": true,
+        "repaired": false,
+        "issues": 0,
+        "checks_ok": true,
+        "exprs": [],
+        "first_exprs": [],
+        "kinds": {
+          "id": "direct",
+          "product_no": "direct",
+          "name": "direct",
+          "description": "direct",
+          "price": "direct",
+          "stock": "null_fill",
+          "status": "direct",
+          "create_time": "direct",
+          "update_time": "direct"
+        }
+      },
+      {
+        "id": "T11",
+        "error": "",
+        "first_pass": false,
+        "repaired": true,
+        "issues": 0,
+        "checks_ok": true,
+        "exprs": [
+          "'paid' if status == 1 else 'unpaid'"
+        ],
+        "first_exprs": [
+          "case when status = 1 then 'paid' else 'unpaid' end"
+        ],
+        "kinds": {
+          "id": "direct",
+          "order_no": "direct",
+          "customer_name": "direct",
+          "phone": "direct",
+          "amount": "direct",
+          "status": "expression",
+          "create_time": "direct",
+          "update_time": "direct"
+        }
+      },
+      {
+        "id": "T12",
+        "error": "",
+        "first_pass": false,
+        "repaired": true,
+        "issues": 0,
+        "checks_ok": true,
+        "exprs": [
+          "concat(order_no,'/',id)",
+          "strip(customer_name)"
+        ],
+        "first_exprs": [
+          "concat(order_no,'/',id)",
+          "trim(customer_name)"
+        ],
+        "kinds": {
+          "id": "direct",
+          "order_no": "expression",
+          "customer_name": "expression",
+          "phone": "direct",
+          "amount": "direct",
+          "status": "direct",
+          "create_time": "direct",
+          "update_time": "direct"
+        }
+      },
+      {
+        "id": "T13",
+        "error": "",
+        "first_pass": false,
+        "repaired": true,
+        "issues": 0,
+        "checks_ok": false,
+        "exprs": [],
+        "first_exprs": [
+          "concat(substr(customer_name,1,1),'*',substr(customer_name,3))",
+          "concat(substr(phone,1,3),'****',substr(phone,8))"
+        ],
+        "kinds": {
+          "id": "direct",
+          "order_no": "direct",
+          "customer_name": "direct",
+          "phone": "direct",
+          "amount": "direct",
+          "status": "cast",
+          "create_time": "direct",
+          "update_time": "direct"
+        }
+      },
+      {
+        "id": "T14",
+        "error": "",
+        "first_pass": false,
+        "repaired": true,
+        "issues": 0,
+        "checks_ok": false,
+        "exprs": [],
+        "first_exprs": [
+          "concat(substr(customer_name,1,1),'*',substr(customer_name,3))"
+        ],
+        "kinds": {
+          "id": "direct",
+          "order_no": "direct",
+          "customer_name": "constant",
+          "phone": "direct",
+          "amount": "direct",
+          "status": "direct",
+          "create_time": "direct",
+          "update_time": "direct"
+        }
+      },
+      {
+        "id": "T15",
+        "error": "",
+        "first_pass": false,
+        "repaired": true,
+        "issues": 0,
+        "checks_ok": false,
+        "exprs": [],
+        "first_exprs": [
+          "concat(substr(phone,1,3),'****',right(phone,4))"
+        ],
+        "kinds": {
+          "id": "direct",
+          "order_no": "direct",
+          "customer_name": "direct",
+          "phone": "direct",
+          "amount": "direct",
+          "status": "direct",
+          "create_time": "direct",
+          "update_time": "direct"
+        }
+      }
+    ]
+  }
+}

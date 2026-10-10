@@ -1,0 +1,288 @@
+/* ===================== 布局 ===================== */
+.app-window { display: flex; flex-direction: column; height: 100vh; }
+
+.app-shell { display: flex; flex: 1; min-height: 0; gap: var(--sp-3); padding: var(--sp-3); }
+
+.app-side { width: 232px; flex-shrink: 0; }
+
+.app-main { flex: 1; min-width: 0; overflow: auto; display: flex; flex-direction: column; gap: var(--sp-3); }
+
+/* ===================== 顶栏 ===================== */
+.mac-toolbar {
+  position: relative;
+  z-index: 30;
+  backdrop-filter: saturate(180%) blur(var(--blur-lg));
+  -webkit-backdrop-filter: saturate(180%) blur(var(--blur-lg));
+  background: var(--bg-elevated);
+  border-bottom: 1px solid var(--border);
+  padding: 10px var(--sp-3);
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+.mac-toolbar__brand { display: flex; align-items: center; gap: 10px; }
+.mac-toolbar__logo {
+  width: 26px; height: 26px; border-radius: 7px;
+  background: var(--accent-grad);
+  display: grid; place-items: center; color: #fff; font-weight: var(--fw-bold); font-size: 13px;
+  box-shadow: var(--shadow-accent);
+}
+.mac-toolbar__title { font-size: var(--fs-lg); font-weight: var(--fw-semibold); letter-spacing: -0.2px; }
+.mac-toolbar__spacer { flex: 1; }
+
+/* ===================== 侧边导航 ===================== */
+.mac-side {
+  border-radius: var(--r-xl);
+  background: var(--bg-elevated);
+  backdrop-filter: saturate(180%) blur(var(--blur));
+  -webkit-backdrop-filter: saturate(180%) blur(var(--blur));
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-sm);
+  padding: var(--sp-2);
+  height: 100%;
+  display: flex; flex-direction: column; gap: 2px;
+}
+.mac-side__section { font-size: var(--fs-xs); font-weight: var(--fw-semibold); color: var(--text-tertiary); padding: 10px 12px 6px; letter-spacing: 0.4px; }
+.mac-nav-item {
+  display: flex; align-items: center; gap: 10px;
+  width: 100%; padding: 9px 12px;
+  border: none; background: transparent; border-radius: var(--r-md);
+  font-family: var(--font-ui); font-size: var(--fs-sm); font-weight: var(--fw-medium);
+  color: var(--text-secondary); cursor: pointer; text-align: left;
+  transition: background var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out);
+}
+.mac-nav-item svg { width: 18px; height: 18px; flex-shrink: 0; }
+.mac-nav-item:hover { background: var(--chip); color: var(--text); }
+.mac-nav-item--active { background: var(--nav-active); color: var(--accent); }
+.mac-nav-item--active:hover { background: var(--nav-active); }
+.mac-nav-badge { margin-left: auto; }
+
+/* ===================== 毛玻璃卡片 ===================== */
+.mac-card {
+  background: var(--bg-elevated);
+  backdrop-filter: saturate(180%) blur(var(--blur));
+  -webkit-backdrop-filter: saturate(180%) blur(var(--blur));
+  border: 1px solid var(--border);
+  border-radius: var(--r-xl);
+  box-shadow: var(--shadow-sm);
+  padding: var(--sp-3);
+}
+.mac-card--solid { background: var(--surface); backdrop-filter: none; }
+.mac-card__head { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-2); margin-bottom: var(--sp-2); }
+.mac-card__title { font-size: var(--fs-md); font-weight: var(--fw-semibold); margin: 0; }
+.mac-card__sub { font-size: var(--fs-xs); color: var(--text-tertiary); }
+
+/* ===================== 按钮 ===================== */
+.mac-btn {
+  appearance: none; border: 1px solid var(--border-strong); border-radius: var(--r-full);
+  padding: 7px 16px; font-family: var(--font-ui); font-size: var(--fs-sm); font-weight: var(--fw-medium);
+  color: var(--text); background: var(--surface); cursor: pointer; gap: 6px; display: inline-flex; align-items: center;
+  /* 按钮文案永不换行：列被挤压时否则会逐字竖排（如「详情」被压成两行）。
+     不再叠加 flex-shrink:0 —— nowrap 已使按钮的最小内容宽度=整段文案，压缩不会破坏文案，
+     而 shrink:0 会在紧凑行（如弹窗页脚）里制造溢出。 */
+  white-space: nowrap;
+  transition: background var(--dur-fast) var(--ease-out), transform var(--dur-fast) var(--ease-out), box-shadow var(--dur-fast) var(--ease-out);
+}
+.mac-btn svg { width: 15px; height: 15px; }
+.mac-btn:hover { background: var(--surface-2); }
+.mac-btn:active { transform: scale(0.97); }
+.mac-btn--primary { background: var(--accent); border-color: transparent; color: #fff; }
+.mac-btn--primary:hover { background: var(--accent-hover); box-shadow: var(--shadow-accent); }
+.mac-btn--primary:active { background: var(--accent-press); transform: scale(0.97); }
+.mac-btn--ghost { background: transparent; }
+.mac-btn--ghost:hover { background: var(--chip); }
+.mac-btn--danger { color: var(--danger); }
+.mac-btn--danger:hover { background: var(--danger-bg); }
+.mac-btn:disabled { opacity: 0.45; cursor: not-allowed; transform: none; box-shadow: none; }
+.mac-btn--block { width: 100%; justify-content: center; }
+
+/* ===================== 分段控件 ===================== */
+.mac-segmented { display: inline-flex; padding: 3px; border-radius: var(--r-full); background: var(--chip); border: 1px solid var(--border); gap: 2px; }
+.mac-segmented__item {
+  border: none; background: transparent; font-family: var(--font-ui); font-size: var(--fs-sm);
+  color: var(--text-secondary); padding: 5px 14px; border-radius: var(--r-full); cursor: pointer;
+  transition: all var(--dur-fast) var(--ease-out);
+}
+.mac-segmented__item--active { background: var(--surface); color: var(--text); box-shadow: var(--shadow-xs); font-weight: var(--fw-medium); }
+
+/* ===================== 模态框 ===================== */
+.mac-modal { position: fixed; inset: 0; z-index: 100; display: grid; place-items: center;
+  background: color-mix(in srgb, var(--bg) 55%, transparent); backdrop-filter: blur(6px); }
+.mac-modal__panel { background: var(--bg-elevated); border: 1px solid var(--border-strong); border-radius: var(--r-xl);
+  box-shadow: var(--shadow-lg); overflow: hidden; animation: mac-pop 0.18s var(--ease-out); }
+.mac-modal__head { display: flex; align-items: center; justify-content: space-between; padding: 14px 18px; border-bottom: 1px solid var(--border); }
+.mac-modal__body { padding: 18px; max-height: 70vh; overflow: auto; display: flex; flex-direction: column; gap: var(--sp-2); }
+.mac-modal__foot { display: flex; justify-content: flex-end; gap: 8px; padding: 12px 18px; border-top: 1px solid var(--border); background: var(--surface); }
+
+/* ===================== 表单 ===================== */
+.mac-field { display: flex; flex-direction: column; gap: 6px; }
+.mac-label { font-size: var(--fs-sm); font-weight: var(--fw-medium); color: var(--text-secondary); }
+.mac-input, .mac-select, .mac-textarea {
+  font-family: var(--font-ui); font-size: var(--fs-sm); color: var(--text);
+  background: var(--surface); border: 1px solid var(--border-strong); border-radius: var(--r-md);
+  padding: 8px 12px; outline: none;
+  /* 原生 select 会按最长 option 撑宽，长连接名/长表名会溢出卡片并遮挡相邻区域 */
+  max-width: 100%; min-width: 0;
+  transition: border-color var(--dur-fast) var(--ease-out), box-shadow var(--dur-fast) var(--ease-out);
+}
+.mac-input::placeholder, .mac-textarea::placeholder { color: var(--text-tertiary); }
+.mac-input:focus, .mac-select:focus, .mac-textarea:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--ring); }
+/* textarea 默认 cols=20 且 display:inline-block，不设宽度会按 20 字符收缩成窄条 */
+.mac-textarea { display: block; width: 100%; resize: vertical; line-height: 1.6; }
+
+.mac-form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: var(--sp-2); }
+
+/* ===================== 行 / 网格 ===================== */
+.mac-row { display: flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap; }
+.mac-grow { flex: 1; min-width: 0; }
+.mac-nowrap { white-space: nowrap; }
+.mac-end { justify-content: flex-end; }
+.mac-divide { margin: var(--sp-2) 0; height: 1px; background: var(--border); }
+
+/* ===================== 徽章 / 状态 ===================== */
+.mac-badge { display: inline-flex; align-items: center; gap: 6px; border-radius: var(--r-full); padding: 3px 10px; font-size: var(--fs-xs); font-weight: var(--fw-medium); border: 1px solid var(--border); color: var(--text-secondary); background: var(--chip); white-space: nowrap; }
+.mac-badge__dot { width: 7px; height: 7px; border-radius: var(--r-full); background: currentColor; }
+.mac-badge--success { color: var(--success); background: var(--success-bg); border-color: transparent; }
+.mac-badge--warning { color: var(--warning); background: var(--warning-bg); border-color: transparent; }
+.mac-badge--danger { color: var(--danger); background: var(--danger-bg); border-color: transparent; }
+.mac-badge--info { color: var(--info); background: var(--info-bg); border-color: transparent; }
+.mac-badge--neutral { color: var(--text-secondary); background: var(--surface-2); border-color: transparent; }
+
+/* ===================== 数据表格 ===================== */
+.mac-table { width: 100%; border-collapse: collapse; font-size: var(--fs-sm); }
+.mac-table th { text-align: left; font-weight: var(--fw-semibold); color: var(--text-secondary); padding: 10px 12px; border-bottom: 1px solid var(--border); font-size: var(--fs-xs); letter-spacing: 0.3px; text-transform: uppercase; white-space: nowrap; }
+.mac-table td { padding: 11px 12px; border-bottom: 1px solid var(--border); vertical-align: middle; }
+.mac-table tbody tr { transition: background var(--dur-fast) var(--ease-out); }
+.mac-table tbody tr:hover { background: var(--row-hover); }
+.mac-table tbody tr:last-child td { border-bottom: none; }
+/* 标识/数值/时间列不折行：避免 run_id、task_key、时间戳被从中间断成两行 */
+.mac-table .num { font-variant-numeric: tabular-nums; font-family: var(--font-mono); white-space: nowrap; }
+
+/* 表格内的操作按钮组保持单行：wrap 容器的 min-content 只等于最宽的那个按钮，浏览器会据此把
+   操作列压到几十像素、按钮竖排。改为 nowrap 后该列按需占宽，整表超出时由外层横向滚动。 */
+.mac-table td .mac-row { flex-wrap: nowrap; }
+
+/* ===================== 指标卡片 ===================== */
+.mac-stat { display: flex; flex-direction: column; gap: 2px; padding: var(--sp-2); }
+.mac-stat__label { font-size: var(--fs-xs); color: var(--text-tertiary); font-weight: var(--fw-medium); }
+.mac-stat__value { font-size: var(--fs-2xl); font-weight: var(--fw-bold); letter-spacing: -0.5px; font-variant-numeric: tabular-nums; }
+.mac-stat__delta { font-size: var(--fs-xs); font-weight: var(--fw-medium); display: inline-flex; align-items: center; gap: 4px; }
+.mac-stat--up { color: var(--success); }
+.mac-stat--down { color: var(--danger); }
+.mac-stat__icon { width: 34px; height: 34px; border-radius: var(--r-md); display: grid; place-items: center; }
+.mac-statgrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: var(--sp-2); }
+
+/* ===================== 图表占位 ===================== */
+.mac-bars { display: flex; align-items: flex-end; gap: 8px; height: 120px; padding: var(--sp-1) 0; }
+.mac-bar { flex: 1; border-radius: 6px 6px 3px 3px; background: var(--accent-grad); opacity: 0.85; min-height: 4px; transition: opacity var(--dur-fast); }
+.mac-bar:hover { opacity: 1; }
+
+/* ===================== 提示条 ===================== */
+.mac-callout { display: flex; gap: 10px; align-items: flex-start; border-radius: var(--r-md); padding: 12px 14px; border: 1px solid var(--border); font-size: var(--fs-sm); line-height: 1.5; }
+.mac-callout--success { background: var(--success-bg); color: var(--success); border-color: transparent; }
+.mac-callout--warning { background: var(--warning-bg); color: var(--warning); border-color: transparent; }
+.mac-callout--danger { background: var(--danger-bg); color: var(--danger); border-color: transparent; }
+.mac-callout--info { background: var(--info-bg); color: var(--info); border-color: transparent; }
+
+/* ===================== 标题 / 文本 ===================== */
+.mac-h1 { font-size: var(--fs-2xl); font-weight: var(--fw-bold); margin: 0; letter-spacing: -0.4px; }
+.mac-h2 { font-size: var(--fs-xl); font-weight: var(--fw-semibold); margin: 0; letter-spacing: -0.2px; }
+.mac-muted { color: var(--text-tertiary); font-size: var(--fs-sm); }
+
+/* ===================== 空状态 ===================== */
+.mac-empty { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; padding: var(--sp-6) var(--sp-3); color: var(--text-tertiary); text-align: center; }
+.mac-empty svg { width: 40px; height: 40px; opacity: 0.5; }
+
+/* ===================== 清单 ===================== */
+.mac-list { display: flex; flex-direction: column; }
+.mac-list__item { display: flex; align-items: center; gap: 12px; padding: 10px; border-radius: var(--r-md); transition: background var(--dur-fast); }
+.mac-list__item:hover { background: var(--row-hover); }
+.mac-avatar { width: 34px; height: 34px; border-radius: var(--r-md); display: grid; place-items: center; font-weight: var(--fw-semibold); color: #fff; flex-shrink: 0; font-size: var(--fs-sm); }
+
+/* ===================== 微交互 ===================== */
+@keyframes mac-pop { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+.mac-pop { animation: mac-pop var(--dur-normal) var(--ease-out); }
+@keyframes mac-fade { from { opacity: 0; } to { opacity: 1; } }
+.mac-fade { animation: mac-fade var(--dur-normal) var(--ease-out); }
+
+.mac-skeleton { border-radius: var(--r-sm); background: var(--chip); animation: mac-shimmer 1.4s var(--ease-std) infinite; }
+@keyframes mac-shimmer { 0% { opacity: 0.4; } 50% { opacity: 0.9; } 100% { opacity: 0.4; } }
+@keyframes mac-spin { to { transform: rotate(360deg); } }
+.mac-spinner {
+  display: inline-block;
+  width: 14px; height: 14px;
+  border: 2px solid var(--accent-soft, rgba(0, 122, 255, 0.3));
+  border-top-color: var(--accent, #007aff);
+  border-radius: 50%;
+  animation: mac-spin 0.8s linear infinite;
+  vertical-align: -2px;
+}
+
+/* ===================== 托盘 chip ===================== */
+.mac-chip { display: inline-flex; align-items: center; gap: 6px; padding: 4px 12px; border-radius: var(--r-full); background: var(--chip); font-size: var(--fs-xs); color: var(--text-secondary); font-weight: var(--fw-medium); white-space: nowrap; }
+
+/* ===================== 页脚 pagination ===================== */
+.mac-pager {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: var(--sp-2); flex-wrap: wrap;
+  margin-top: var(--sp-2); padding-top: var(--sp-2);
+  border-top: 1px solid var(--border);
+}
+.mac-pager__info { font-size: var(--fs-xs); color: var(--text-tertiary); font-variant-numeric: tabular-nums; }
+.mac-pager__page { min-width: 52px; text-align: center; font-size: var(--fs-sm); color: var(--text-secondary); font-variant-numeric: tabular-nums; }
+.mac-pager__size { padding: 5px 10px; font-variant-numeric: tabular-nums; }
+
+/* ===================== 详情展开行 ===================== */
+.mac-detail-row > td {
+  background: var(--bg-elevated);
+  border-top: none;
+  padding: 0 var(--sp-3);
+}
+.mac-detail-row__inner {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: var(--sp-2);
+  padding: var(--sp-2) 0 var(--sp-3);
+}
+.mac-detail__item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: var(--fs-sm);
+}
+.mac-detail__label { color: var(--text-tertiary); font-size: var(--fs-xs); }
+.mac-detail__value { color: var(--text-primary); font-weight: var(--fw-medium); word-break: break-all; }
+
+/* ===================== 展开箭头 ===================== */
+.mac-btn--chevron { transition: transform var(--dur-fast) var(--ease-out); }
+.mac-btn--chevron.mac-btn--open { transform: rotate(90deg); }
+
+/* ===================== 查询工作台（四区布局） ===================== */
+.mac-workbench {
+  display: grid;
+  grid-template-columns: minmax(232px, 288px) 1fr;
+  gap: var(--sp-3);
+  align-items: start;
+}
+.mac-workbench__side { display: flex; flex-direction: column; gap: var(--sp-3); position: sticky; top: 0; }
+.mac-workbench__main { display: flex; flex-direction: column; gap: var(--sp-3); min-width: 0; }
+
+.mac-tree { display: flex; flex-direction: column; gap: 2px; max-height: 380px; overflow: auto; margin-top: var(--sp-1); }
+.mac-tree__item {
+  display: flex; align-items: center; gap: 8px;
+  width: 100%; padding: 6px 8px;
+  border: 0; border-radius: var(--r-sm);
+  background: transparent; color: var(--text-secondary);
+  font-family: var(--font-ui); font-size: var(--fs-sm); text-align: left; cursor: pointer;
+  transition: background var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out);
+}
+.mac-tree__item:hover { background: var(--row-hover); color: var(--text); }
+.mac-tree__item--active { background: var(--nav-active); color: var(--accent); }
+.mac-tree__name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mac-tree__kind { flex-shrink: 0; font-size: var(--fs-xs); color: var(--text-tertiary); }
+
+@media (max-width: 900px) {
+  .mac-workbench { grid-template-columns: 1fr; }
+  .mac-workbench__side { position: static; }
+  .mac-tree { max-height: 240px; }
+}

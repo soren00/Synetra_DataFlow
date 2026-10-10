@@ -1,0 +1,36 @@
+[project]
+name = "synetra-backend"
+version = "0.1.0"
+description = "Synetra_DataFlow Web 后端（FastAPI）"
+requires-python = ">=3.10"
+dependencies = [
+    "fastapi>=0.110",
+    "uvicorn[standard]>=0.29",
+    "pydantic-settings>=2.2",
+    "cryptography>=42.0",
+    "pymysql>=1.1",
+    "httpx>=0.27",
+    "sqlparse>=0.5",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "httpx>=0.27",
+    "ruff>=0.4",
+]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = ["app"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+extend-exclude = ["data", "scripts"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

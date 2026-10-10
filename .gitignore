@@ -1,0 +1,33 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.env
+
+# Node / React
+node_modules/
+dist/
+build/
+*.log
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
+
+# AI 编辑器 / 助手配置（本地私有，不公开）
+.codebuddy/
+.agents/
+.trae/
+
+# Backend runtime data (generated on startup: sqlite db, vault key, scripts)
+services/backend/data/
+*.db
+*.db-shm
+*.db-wal
+*.key

@@ -1,0 +1,19 @@
+# 统一换行符：仓库内统一使用 LF，避免跨平台差异
+* text=auto eol=lf
+
+# Linux 部署 / 执行脚本强制 LF
+*.sh text eol=lf
+
+# Windows 脚本保留 CRLF
+*.bat text eol=crlf
+*.cmd text eol=crlf
+*.ps1 text eol=crlf
+
+# 二进制文件不做换行转换
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.woff binary
+*.woff2 binary

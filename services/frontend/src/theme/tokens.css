@@ -1,0 +1,150 @@
+:root {
+  /* ---- 间距：8pt 网格 ---- */
+  --sp-1: 8px;
+  --sp-2: 16px;
+  --sp-3: 24px;
+  --sp-4: 32px;
+  --sp-5: 40px;
+  --sp-6: 48px;
+  --sp-05: 4px;
+
+  /* ---- 圆角（macOS 风格） ---- */
+  --r-sm: 6px;
+  --r-md: 10px;
+  --r-lg: 14px;
+  --r-xl: 20px;
+  --r-2xl: 26px;
+  --r-full: 9999px;
+
+  /* ---- 字体 ---- */
+  --font-ui: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue",
+    "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+  --font-mono: "SF Mono", "Menlo", ui-monospace, "JetBrains Mono", monospace;
+  --fs-xs: 11px;
+  --fs-sm: 13px;
+  --fs-md: 15px;
+  --fs-lg: 17px;
+  --fs-xl: 22px;
+  --fs-2xl: 28px;
+  --fs-3xl: 34px;
+  --fw-regular: 400;
+  --fw-medium: 500;
+  --fw-semibold: 600;
+  --fw-bold: 700;
+
+  /* ---- 动效 ---- */
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-std: cubic-bezier(0.4, 0, 0.2, 1);
+  --dur-fast: 0.12s;
+  --dur-normal: 0.24s;
+  --dur-slow: 0.4s;
+
+  /* ---- 阴影（macOS 层次） ---- */
+  --shadow-xs: 0 1px 2px rgba(20, 24, 31, 0.06);
+  --shadow-sm: 0 2px 8px rgba(20, 24, 31, 0.08), 0 1px 3px rgba(20, 24, 31, 0.05);
+  --shadow-md: 0 8px 24px rgba(20, 24, 31, 0.12), 0 2px 6px rgba(20, 24, 31, 0.06);
+  --shadow-lg: 0 16px 40px rgba(20, 24, 31, 0.16);
+  --shadow-accent: 0 6px 18px rgba(10, 132, 255, 0.35);
+
+  /* ---- 毛玻璃 ---- */
+  --blur: 18px;
+  --blur-lg: 30px;
+  --glass-tint: 0.72;
+
+  /* ---- 品牌 ---- */
+  --accent: #0a84ff;
+  --accent-2: #5e5ce6;
+  --accent-3: #30d158;
+  --accent-grad: linear-gradient(135deg, #0a84ff 0%, #5e5ce6 100%);
+  --accent-hover: #007aff;
+  --accent-press: #0062cc;
+
+  /* 浅色主题变量 */
+  --text: #1d2229;
+  --text-secondary: #525a66;
+  --text-tertiary: #8a919c;
+  --bg: #f0f1f4;
+  --bg-elevated: rgba(255, 255, 255, 0.66);
+  --surface: #ffffff;
+  --surface-2: #f5f5f7;
+  --surface-3: #ebebee;
+  --border: rgba(0, 0, 0, 0.09);
+  --border-strong: rgba(0, 0, 0, 0.16);
+  --success: #23a063;
+  --success-bg: rgba(35, 160, 99, 0.12);
+  --warning: #e0a51b;
+  --warning-bg: rgba(224, 165, 27, 0.13);
+  --danger: #d51e2a;
+  --danger-bg: rgba(213, 30, 42, 0.12);
+  --info: #0a84ff;
+  --info-bg: rgba(10, 132, 255, 0.12);
+  --glass-hi: rgba(255, 255, 255, 0.6);
+  --scrim: rgba(0, 0, 0, 0.32);
+  --chip: rgba(0, 0, 0, 0.05);
+  --chip-hover: rgba(0, 0, 0, 0.09);
+  --ring: rgba(10, 132, 255, 0.3);
+  --nav-active: rgba(10, 132, 255, 0.14);
+  --row-hover: rgba(0, 0, 0, 0.035);
+}
+
+[data-theme="dark"] {
+  --accent: #0a84ff;
+  --accent-2: #76a7ff;
+  --accent-3: #30d158;
+  --accent-grad: linear-gradient(135deg, #0a84ff 0%, #6e6cf8 100%);
+  --accent-hover: #3a9bff;
+  --accent-press: #5cacff;
+  --text: #f2f3f5;
+  --text-secondary: #b0b6c0;
+  --text-tertiary: #777e8a;
+  --bg: #17181a;
+  --bg-elevated: rgba(28, 29, 32, 0.72);
+  --surface: #24252a;
+  --surface-2: #2c2d33;
+  --surface-3: #35363d;
+  --border: rgba(255, 255, 255, 0.1);
+  --border-strong: rgba(255, 255, 255, 0.2);
+  --success: #32d07a;
+  --success-bg: rgba(50, 208, 122, 0.14);
+  --warning: #f0ae2a;
+  --warning-bg: rgba(240, 174, 42, 0.15);
+  --danger: #ff453a;
+  --danger-bg: rgba(255, 69, 58, 0.15);
+  --info: #0a84ff;
+  --info-bg: rgba(10, 132, 255, 0.16);
+  --glass-hi: rgba(55, 56, 61, 0.6);
+  --scrim: rgba(0, 0, 0, 0.55);
+  --chip: rgba(255, 255, 255, 0.05);
+  --chip-hover: rgba(255, 255, 255, 0.1);
+  --ring: rgba(10, 132, 255, 0.42);
+  --nav-active: rgba(10, 132, 255, 0.18);
+  --row-hover: rgba(255, 255, 255, 0.04);
+}
+
+* { box-sizing: border-box; }
+
+html, body, #root { height: 100%; }
+
+body {
+  margin: 0;
+  font-family: var(--font-ui);
+  font-size: var(--fs-md);
+  color: var(--text);
+  background: var(--bg);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  transition: background var(--dur-slow) var(--ease-out), color var(--dur-slow) var(--ease-out);
+}
+
+::selection { background: var(--ring); }
+
+/* ---------- 滚动条（macOS 风格） ---------- */
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--text-tertiary) 38%, transparent);
+  border-radius: var(--r-full);
+  border: 3px solid transparent;
+  background-clip: content-box;
+}
+::-webkit-scrollbar-thumb:hover { background-color: color-mix(in srgb, var(--text-secondary) 55%, transparent); }
+::-webkit-scrollbar-track { background: transparent; }

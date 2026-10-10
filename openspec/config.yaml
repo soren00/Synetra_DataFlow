@@ -1,0 +1,43 @@
+schema: spec-driven
+
+# Project context (optional)
+# This is shown to AI when creating artifacts.
+context: |
+  项目：Synetra_DataFlow —— Web 化 ETL 同步与任务调度平台。
+  目标用户：懂 ETL/数仓的数据工程师（非无代码用户）。
+  技术栈：Python 3.10+、自研 etl_sdk 包（抽取/转换/加载，SyncConfig 为契约冻结点）、
+  FastAPI（Web 后端）、React（Web 前端，macOS 设计语言：8pt 网格/圆角/毛玻璃/深浅色）、
+  本地调度执行（LocalScheduler，自建执行器）、MySQL（元数据/日志库）、Linux 一键部署（单机）。
+  LLM：供应商无关的统一接入层，默认 DeepSeek；调用前配置强制脱敏，RAG 注入 etl_sdk 文档。
+  两条转换路径：LLM+Python（dry-run+静态校验+人工确认）与手写 Python（档位1 安全：
+  低权限身份/最小凭证/网络白名单/资源配额，四项独立验收；保存前可选 dry-run）。
+  语言：所有 OpenSpec 文档与需求描述使用中文；需求中规范用语用 SHALL，场景用 WHEN/THEN。
+  文档规范：proposal 的每条能力承诺必须能追溯到 specs 中的 Requirement 与 tasks.md 的任务；
+  不得在 proposal 承诺 specs/tasks 均未覆盖的能力。
+
+# Per-artifact rules (optional)
+rules:
+  proposal:
+    - 每条 What Changes 必须在 specs 与 tasks 中有对应落点，无断链
+    - BREAKING 变更必须显式标注并说明被取代的旧决策
+  specs:
+    - 每个 Requirement 至少含一个可测试的 Scenario，WHEN/THEN 描述可观察行为而非实现
+    - 安全类控制按独立控制点拆分 Requirement，避免一条粗粒度需求对应多个任务
+    - 新增能力用 ADDED Requirements；delta 中不复制与本次无关的旧需求
+  design:
+    - 每个决策需包含理由与至少一个被否决的备选方案
+    - Open Questions 只能留不影响规格与任务分解的事项，阻塞项标注依赖
+  tasks:
+    - 每条任务必须包含"验证："开头的可验收标准
+    - 用 [P1]/[P2] 标注分期；P1 为端到端闭环，P2 为连接器/MDM 扩展
+    - 有前后置依赖的任务组在文件开头或组标题注明依赖关系
+
+# Per-operation guidance (optional)
+operations:
+  apply:
+    guidance:
+      - 先完成 P1 任务形成端到端闭环，再进入 P2
+      - 安全控制任务（手写路径档位1、权限与 API 凭据）的验证需给出实际复现步骤
+  archive:
+    guidance:
+      - archive 前确认 proposal↔specs↔tasks 无断链，并同步标注旧基线文档的取代关系
