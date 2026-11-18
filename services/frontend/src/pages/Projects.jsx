@@ -67,7 +67,7 @@ function ProjectList({ onOpen }) {
                   <td>
                     <button
                       className="mac-btn mac-btn--ghost"
-                      style={{ padding: 0, fontWeight: 500 }}
+                      style={{ padding: "5px 10px", margin: "-5px 0 -5px -10px", fontWeight: 500 }}
                       onClick={() => onOpen(p)}
                       title="进入项目"
                     >{p.name}</button>

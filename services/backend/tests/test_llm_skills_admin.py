@@ -13,6 +13,8 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
+from authhelpers import act_as
+
 from app.core.config import get_settings
 from app.llm import skill_lint
 
@@ -42,11 +44,11 @@ def sandbox_skills(monkeypatch, tmp_path_factory):
 
 
 def _as_admin(client):
-    client.headers["X-Synetra-User"] = "admin"
+    act_as(client, "admin")
 
 
 def _as_dev(client):
-    client.headers["X-Synetra-User"] = "dev"
+    act_as(client, "dev")
 
 
 # ---- 7.2 清单与内容查看 ----

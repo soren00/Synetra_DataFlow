@@ -7,6 +7,8 @@ import tempfile
 
 from fastapi.testclient import TestClient
 
+from authhelpers import act_as
+
 TASK_CFG = {
     "project": "proj-a", "name": "s1",
     "source_conn_key": "src", "target_conn_key": "tgt",
@@ -33,8 +35,9 @@ def _client():
     return TestClient(app), store, tmp
 
 
-def _auth(client: TestClient, user: str):
-    client.headers["X-Synetra-User"] = user
+def _auth(client: TestClient, user: str, password: str | None = None):
+    """切到指定账号身份（真实签名的会话票据，覆盖默认管理员夹具）。"""
+    act_as(client, user, password)
 
 
 def _mk_task(client, project: str) -> str:

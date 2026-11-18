@@ -1,6 +1,6 @@
 import { Fragment, useEffect, useState } from "react";
 import { api } from "../api/client";
-import { Badge, Button, Callout, Card, Empty, Input, Modal, ModalFooter, Table, Textarea } from "../components/ui";
+import { Badge, Button, Callout, Card, ConfirmDialog, Empty, Input, Modal, ModalFooter, Row, Table, Textarea } from "../components/ui";
 
 const SYNC_TONE = { success: "success", warning: "warning" };
 
@@ -13,8 +13,63 @@ export default function MDM() {
   const [msg, setMsg] = useState(null);
   const [form, setForm] = useState({ entity: "", label: "", fields: "id,int,required,unique" });
 
+  // 记录级维护（新增/编辑/删除）与同步分发
+  const [records, setRecords] = useState({});
+  const [recModal, setRecModal] = useState(null); // { entity, fields, record_id?, values }
+  const [confirmRec, setConfirmRec] = useState(null);
+
   const load = () => { api.get("/mdm/models").then(setModels).catch((e) => setError(e.message)); };
   useEffect(load, []);
+
+  const loadRecords = (entity) => api.get(`/mdm/models/${entity}/records`)
+    .then((rows) => setRecords((prev) => ({ ...prev, [entity]: rows || [] })))
+    .catch((e) => setMsg({ tone: "danger", text: `记录加载失败：${e.message}` }));
+
+  const toggleEntity = (entity) => {
+    const next = open === entity ? null : entity;
+    setOpen(next);
+    if (next) loadRecords(entity);
+  };
+
+  const saveRecord = async () => {
+    const { entity, fields, record_id, values } = recModal;
+    // 按字段类型把输入转为数值，避免 int 字段收到字符串而校验失败
+    const typed = {};
+    for (const f of fields) {
+      const raw = values[f.name];
+      if (raw === undefined || raw === "") continue;
+      const numeric = ["int", "integer", "number", "float", "decimal"].includes(String(f.type).toLowerCase());
+      typed[f.name] = numeric ? Number(raw) : raw;
+    }
+    setBusy(true); setMsg(null);
+    try {
+      if (record_id) await api.put(`/mdm/models/${entity}/records/${record_id}`, { record: typed });
+      else await api.post(`/mdm/models/${entity}/records`, { record: typed });
+      setRecModal(null);
+      loadRecords(entity);
+    } catch (e) { setMsg({ tone: "danger", text: `保存失败：${e.message}` }); }
+    finally { setBusy(false); }
+  };
+
+  const deleteRecord = async () => {
+    const { entity, record_id } = confirmRec;
+    setBusy(true); setMsg(null);
+    try {
+      await api.del(`/mdm/models/${entity}/records/${record_id}`);
+      setConfirmRec(null);
+      loadRecords(entity);
+    } catch (e) { setMsg({ tone: "danger", text: `删除失败：${e.message}` }); setConfirmRec(null); }
+    finally { setBusy(false); }
+  };
+
+  const syncEntity = async (entity) => {
+    setMsg(null);
+    try {
+      const r = await api.post(`/mdm/models/${entity}/sync`);
+      setMsg({ tone: "success", text: `「${entity}」同步完成：${JSON.stringify(r)}` });
+      loadRecords(entity); load();
+    } catch (e) { setMsg({ tone: "danger", text: `同步失败：${e.message}` }); }
+  };
 
   const submit = async () => {
     setBusy(true); setMsg(null);
@@ -61,7 +116,7 @@ export default function MDM() {
                       <td>
                         <Button variant="ghost" icon="chevron"
                           className={`mac-btn--chevron${open === entity ? " mac-btn--open" : ""}`}
-                          onClick={() => setOpen(open === entity ? null : entity)}
+                          onClick={() => toggleEntity(entity)}
                           style={{ padding: 6 }} aria-label="展开详情" aria-expanded={open === entity} />
                       </td>
                     </tr>
@@ -78,6 +133,48 @@ export default function MDM() {
                                   <span className="mac-detail__value">{it.value}</span>
                                 </div>
                               ))}
+                            <div className="mac-detail__item" style={{ gridColumn: "1 / -1" }}>
+                              <Row className="mac-end" style={{ justifyContent: "space-between" }}>
+                                <span className="mac-detail__label">
+                                  记录（{(records[entity] || []).length}）
+                                </span>
+                                <Row style={{ gap: 6 }}>
+                                  <Button variant="ghost" icon="plus"
+                                    onClick={() => setRecModal({ entity, fields: m.fields || [], values: {} })}>
+                                    新增记录
+                                  </Button>
+                                  <Button variant="ghost" icon="refresh" onClick={() => syncEntity(entity)}>
+                                    同步分发
+                                  </Button>
+                                </Row>
+                              </Row>
+                              <Table head={[...(m.fields || []).map((f) => f.name), "操作"]}>
+                                {(records[entity] || []).length === 0
+                                  ? <tr><td colSpan={(m.fields || []).length + 1} style={{ textAlign: "center", color: "var(--text-tertiary)" }}>暂无记录</td></tr>
+                                  : (records[entity] || []).map((r) => (
+                                      <tr key={r._id || r.record_id}>
+                                        {(m.fields || []).map((f) => (
+                                          <td key={f.name} className="num">{r[f.name] ?? "-"}</td>
+                                        ))}
+                                        <td>
+                                          <Row style={{ gap: 4 }}>
+                                            <Button variant="ghost" style={{ padding: 5 }}
+                                              onClick={() => setRecModal({
+                                                entity, fields: m.fields || [],
+                                                record_id: r._id || r.record_id, values: { ...r },
+                                              })}>
+                                              编辑
+                                            </Button>
+                                            <Button variant="ghost" style={{ padding: 5 }}
+                                              onClick={() => setConfirmRec({ entity, record_id: r._id || r.record_id })}>
+                                              删除
+                                            </Button>
+                                          </Row>
+                                        </td>
+                                      </tr>
+                                    ))}
+                              </Table>
+                            </div>
                           </div>
                         </td>
                       </tr>
@@ -102,6 +199,42 @@ export default function MDM() {
               placeholder={"id,int,required,unique\nemail,string,unique,format=email\nname,string,required"} />
             <span className="mac-muted" style={{ fontSize: 12 }}>规则：required / unique / format=email|phone|date</span></div>
         </Modal>
+      )}
+
+      {msg && !show && <Callout tone={msg.tone}>{msg.text}</Callout>}
+
+      {recModal && (
+        <Modal
+          title={recModal.record_id ? `编辑记录 · ${recModal.entity}` : `新增记录 · ${recModal.entity}`}
+          onClose={() => setRecModal(null)}
+          width={560}
+          footer={<ModalFooter onCancel={() => setRecModal(null)} onOk={saveRecord} busy={busy} okText="保存" />}
+        >
+          {(recModal.fields || []).map((f) => (
+            <div className="mac-field" key={f.name}>
+              <span className="mac-label">{f.name}{f.required ? " *" : ""}{f.unique ? "（唯一）" : ""}</span>
+              <Input
+                value={recModal.values[f.name] ?? ""}
+                onChange={(e) => setRecModal({
+                  ...recModal,
+                  values: { ...recModal.values, [f.name]: e.target.value },
+                })}
+                placeholder={f.type || "string"}
+              />
+            </div>
+          ))}
+        </Modal>
+      )}
+
+      {confirmRec && (
+        <ConfirmDialog
+          title="删除记录"
+          message={<span>确认删除记录 <b>{confirmRec.record_id}</b>？此操作不可撤销。</span>}
+          okText="删除"
+          busy={busy}
+          onOk={deleteRecord}
+          onCancel={() => setConfirmRec(null)}
+        />
       )}
     </div>
   );

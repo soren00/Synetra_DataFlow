@@ -7,6 +7,8 @@ import tempfile
 
 from fastapi.testclient import TestClient
 
+from authhelpers import act_as
+
 from app.core.config import get_settings
 
 GOOD_FIELD = {"source": "email", "target": "email", "kind": "expression",
@@ -50,7 +52,7 @@ def _trace(prompts=None, draft=None) -> dict:
 
 
 def _post_task(client, *, trace=None, fields=None):
-    client.headers["X-Synetra-User"] = "dev"
+    act_as(client, "dev")
     body = {"project": "demo", "name": "ai-task", "config": _cfg(fields)}
     if trace is not None:
         body["ai_trace"] = trace
@@ -141,7 +143,7 @@ def test_pagination_and_status_filter_follow_runs_contract():
                 _post_task(client, trace=_trace([f"第{i}次"]))
             assert len(s.list_generations(limit=100)) == 25
 
-            client.headers["X-Synetra-User"] = "dev"
+            act_as(client, "dev")
             first = client.get("/api/llm/generations", params={"page": 1, "page_size": 20}).json()
             assert first["total"] == 25
             assert first["pages"] == 2
@@ -170,7 +172,7 @@ def test_status_filter_and_invalid_status():
             _post_task(client, trace=_trace())
             _post_task(client, trace=_trace(), fields=[BAD_FIELD])
 
-            client.headers["X-Synetra-User"] = "dev"
+            act_as(client, "dev")
             ok = client.get("/api/llm/generations", params={"status": "success"}).json()
             assert [r["status"] for r in ok["records"]] == ["success"]
             assert ok["status_counts"] == {"success": 1, "failed": 1}
@@ -187,7 +189,7 @@ def test_records_require_developer_role():
     try:
         with client:
             s.create_user("reader", "readonly", password="ro")
-            client.headers["X-Synetra-User"] = "reader"
+            act_as(client, "reader")
             assert client.get("/api/llm/generations").status_code == 403
     finally:
         client.close(); tmp.cleanup()

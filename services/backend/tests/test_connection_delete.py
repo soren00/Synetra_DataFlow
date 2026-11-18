@@ -7,6 +7,8 @@ import tempfile
 
 from fastapi.testclient import TestClient
 
+from authhelpers import act_as
+
 
 def _client():
     # ignore_cleanup_errors：Windows 上后台调度线程可能仍持有 sqlite 文件，
@@ -26,8 +28,9 @@ def _client():
     return TestClient(app), store, tmp
 
 
-def _auth(client: TestClient, user: str):
-    client.headers["X-Synetra-User"] = user
+def _auth(client: TestClient, user: str, password: str | None = None):
+    """切到指定账号身份（真实签名的会话票据，覆盖默认管理员夹具）。"""
+    act_as(client, user, password)
 
 
 def _mk_conn(client, name: str = "订单库", secret: str | None = "pw") -> str:

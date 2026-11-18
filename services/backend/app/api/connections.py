@@ -32,7 +32,8 @@ DeveloperDep = Annotated[AuthContext, Depends(require_role(Role.DEVELOPER))]
 
 
 @router.post("", response_model=ConnectionOut, status_code=201)
-def create_connection(data: ConnectionCreate, store: StoreDep) -> ConnectionOut:
+def create_connection(data: ConnectionCreate, _: DeveloperDep,
+                      store: StoreDep) -> ConnectionOut:
     """创建连接：秘密经 Vault 加密后落库，返回信息不含任何密文/明文 secrets。"""
     return store.create_connection(data)
 
@@ -55,7 +56,8 @@ def get_connection(conn_key: str, store: StoreDep) -> ConnectionOut:
 
 
 @router.put("/{conn_key}", response_model=ConnectionOut)
-def update_connection(conn_key: str, data: ConnectionCreate, store: StoreDep) -> ConnectionOut:
+def update_connection(conn_key: str, data: ConnectionCreate, _: DeveloperDep,
+                      store: StoreDep) -> ConnectionOut:
     """编辑连接：更新元数据；secret 留空表示保持原秘密，提供则轮换密码并重加密。"""
     try:
         return store.update_connection(conn_key, data)
@@ -104,14 +106,16 @@ class ConnectionTestResult(BaseModel):
 
 
 @router.post("/test", response_model=ConnectionTestResult)
-def test_connection_config(data: ConnectionCreate, store: StoreDep) -> ConnectionTestResult:
+def test_connection_config(data: ConnectionCreate, _: DeveloperDep,
+                           store: StoreDep) -> ConnectionTestResult:
     """未保存即可试连：用表单中的 meta 与秘密直接跑连通性检查，便于「新建连接」时即时验证。"""
     ok, detail = check_connection(data.ctype, data.meta, data.secret)
     return ConnectionTestResult(ok=ok, detail=detail)
 
 
 @router.post("/{conn_key}/test", response_model=ConnectionTestResult)
-def test_connection_endpoint(conn_key: str, store: StoreDep) -> ConnectionTestResult:
+def test_connection_endpoint(conn_key: str, _: DeveloperDep,
+                             store: StoreDep) -> ConnectionTestResult:
     """用存储的 meta 与解密秘密对连接执行连通性测试；不返回秘密本身。"""
     try:
         conn = store.get_connection(conn_key)
@@ -129,7 +133,7 @@ def _secret_of(store: Store, conn_key: str) -> str | None:
 
 
 @router.post("/{conn_key}/sniff", response_model=dict)
-def sniff_connection(conn_key: str, store: StoreDep) -> dict:
+def sniff_connection(conn_key: str, _: DeveloperDep, store: StoreDep) -> dict:
     """CSV 源：读取表结构（列 + 推断类型 + 行数 + 预览）。"""
     conn = _get_conn_or_404(store, conn_key)
     if conn.ctype is not ConnectionType.CSV:
@@ -143,7 +147,7 @@ def sniff_connection(conn_key: str, store: StoreDep) -> dict:
 
 
 @router.post("/{conn_key}/sample", response_model=dict)
-def sample_connection(conn_key: str, store: StoreDep) -> dict:
+def sample_connection(conn_key: str, _: DeveloperDep, store: StoreDep) -> dict:
     """REST/API 源：发起请求并返回样例数据。"""
     conn = _get_conn_or_404(store, conn_key)
     if conn.ctype is not ConnectionType.API:

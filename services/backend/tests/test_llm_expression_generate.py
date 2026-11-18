@@ -8,6 +8,8 @@ import tempfile
 
 from fastapi.testclient import TestClient
 
+from authhelpers import act_as
+
 from app.core.config import get_settings
 from app.llm.provider import LLMProvider, model_info, register_provider
 from app.store import Store
@@ -59,7 +61,7 @@ def _events(store: Store) -> list[dict]:
 
 
 def _post(client, **body):
-    client.headers["X-Synetra-User"] = "dev"
+    act_as(client, "dev")
     return client.post("/api/llm/expression", json=body)
 
 
@@ -183,7 +185,7 @@ def test_generated_expression_does_not_bypass_save_validation():
         with client:
             p = FakeProvider([GOOD])
             register_provider("deepseek", p)
-            client.headers["X-Synetra-User"] = "dev"
+            act_as(client, "dev")
 
             r = _post(client, prompt="手机号打码", source_field="phone", columns=["phone"])
             generated = r.json()["expression"]
@@ -223,7 +225,7 @@ def test_requires_developer_role():
         with client:
             register_provider("deepseek", FakeProvider([GOOD]))
             s.create_user("reader", "readonly", password="ro")
-            client.headers["X-Synetra-User"] = "reader"
+            act_as(client, "reader")
             assert client.post("/api/llm/expression",
                                json={"prompt": "打码"}).status_code == 403
     finally:

@@ -1,8 +1,12 @@
-"""FastAPI 应用入口、健康检查与连接管理路由。"""
+"""FastAPI 应用入口、健康检查与路由装配。
+
+鉴权兜底：除 `auth_router`（内含公开的登录接口）与 `trigger_router`（服务凭据通道）外，
+所有路由在注册时统一要求至少只读身份，避免新增路由漏挂依赖而匿名可达。
+"""
 
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI
 
 from app import __version__
 from app.api import (
@@ -14,13 +18,17 @@ from app.api import (
     mdm_router,
     metadata_router,
     monitor_router,
+    pipeline_router,
     projects_router,
     query_router,
     schedule_router,
     scripts_router,
     tasks_router,
+    trigger_router,
 )
+from app.auth import require_role
 from app.core.config import get_settings
+from app.models.access import Role
 from app.store import Store
 
 settings = get_settings()
@@ -81,19 +89,24 @@ def _log_llm_skill_versions() -> None:
 
 app = FastAPI(title=settings.app_name, version=settings.app_version, lifespan=lifespan)
 
-app.include_router(auth_router, prefix="/api")
-app.include_router(access_router, prefix="/api")
-app.include_router(catalog_router, prefix="/api")
-app.include_router(connections_router, prefix="/api")
-app.include_router(llm_router, prefix="/api")
-app.include_router(mdm_router, prefix="/api")
-app.include_router(metadata_router, prefix="/api")
-app.include_router(monitor_router, prefix="/api")
-app.include_router(projects_router, prefix="/api")
-app.include_router(query_router, prefix="/api")
-app.include_router(schedule_router, prefix="/api")
-app.include_router(tasks_router, prefix="/api")
-app.include_router(scripts_router, prefix="/api")
+# 业务路由统一兜底：至少只读身份；写操作由各路由再叠加 developer/admin 依赖
+_REQUIRE_SESSION = [Depends(require_role(Role.READONLY))]
+
+app.include_router(auth_router, prefix="/api")  # 含公开的 /auth/login
+app.include_router(trigger_router, prefix="/api")  # 服务凭据通道，不校验用户会话
+app.include_router(access_router, prefix="/api", dependencies=_REQUIRE_SESSION)
+app.include_router(catalog_router, prefix="/api", dependencies=_REQUIRE_SESSION)
+app.include_router(connections_router, prefix="/api", dependencies=_REQUIRE_SESSION)
+app.include_router(llm_router, prefix="/api", dependencies=_REQUIRE_SESSION)
+app.include_router(mdm_router, prefix="/api", dependencies=_REQUIRE_SESSION)
+app.include_router(metadata_router, prefix="/api", dependencies=_REQUIRE_SESSION)
+app.include_router(monitor_router, prefix="/api", dependencies=_REQUIRE_SESSION)
+app.include_router(pipeline_router, prefix="/api", dependencies=_REQUIRE_SESSION)
+app.include_router(projects_router, prefix="/api", dependencies=_REQUIRE_SESSION)
+app.include_router(query_router, prefix="/api", dependencies=_REQUIRE_SESSION)
+app.include_router(schedule_router, prefix="/api", dependencies=_REQUIRE_SESSION)
+app.include_router(tasks_router, prefix="/api", dependencies=_REQUIRE_SESSION)
+app.include_router(scripts_router, prefix="/api", dependencies=_REQUIRE_SESSION)
 
 
 @app.get("/health")

@@ -8,6 +8,8 @@ import tempfile
 
 from fastapi.testclient import TestClient
 
+from authhelpers import act_as
+
 from app.core.config import get_settings
 from app.llm.provider import (
     LLMProvider,
@@ -113,7 +115,7 @@ def test_config_put_get_mask_and_no_plaintext():
     client, s, tmp = _client()
     try:
         with client:
-            client.headers["X-Synetra-User"] = "admin"
+            act_as(client, "admin")
             r = client.put("/api/llm/config", json={
                 "provider": "deepseek", "base_url": "https://api.deepseek.com/v1",
                 "model": "deepseek-chat", "api_key": "sk-test-12345678"})
@@ -134,7 +136,7 @@ def test_config_revoke_then_generate_503():
     client, s, tmp = _client()
     try:
         with client:
-            client.headers["X-Synetra-User"] = "admin"
+            act_as(client, "admin")
             client.put("/api/llm/config", json={"api_key": "sk-test-12345678"})
             r = client.delete("/api/llm/config/key")
             assert r.status_code == 200 and r.json()["revoked"] is True
@@ -155,7 +157,7 @@ def test_config_non_admin_403():
     client, _s, tmp = _client()
     try:
         with client:
-            client.headers["X-Synetra-User"] = "dev"
+            act_as(client, "dev")
             assert client.get("/api/llm/config").status_code == 403
             assert client.put("/api/llm/config", json={}).status_code == 403
             assert client.post("/api/llm/config/test", json={}).status_code == 403
@@ -168,7 +170,7 @@ def test_config_test_invalid_key_returns_reason():
     client, _s, tmp = _client()
     try:
         with client:
-            client.headers["X-Synetra-User"] = "admin"
+            act_as(client, "admin")
             r = client.post("/api/llm/config/test", json={
                 "base_url": "http://127.0.0.1:1", "api_key": "bad-key"})
             assert r.status_code == 200
@@ -186,7 +188,7 @@ def test_draft_two_rounds_with_catalog_and_warnings():
         with client:
             src, tgt = _seed_conns(s, tmp.name)
             register_provider("deepseek", FakeProvider([_skeleton_json(src, tgt), _full_json(src, tgt)]))
-            client.headers["X-Synetra-User"] = "dev"
+            act_as(client, "dev")
             r = client.post("/api/llm/tasks/draft", json={
                 "description": "每天从 orders 增量抽已支付订单到 orders_dw",
                 "project": "demo",
@@ -225,7 +227,7 @@ def test_draft_user_picked_connections_override_skeleton():
             # 骨架轮故意输出错误连接 → 应被请求中用户指定值强制覆盖
             register_provider("deepseek", FakeProvider([
                 _skeleton_json("WRONG_SRC", "WRONG_TGT"), _full_json(src, tgt)]))
-            client.headers["X-Synetra-User"] = "dev"
+            act_as(client, "dev")
             r = client.post("/api/llm/tasks/draft", json={
                 "description": "同步订单",
                 "connections": [
@@ -252,7 +254,7 @@ def test_draft_provider_request_error_no_retry_502():
             p.converse = lambda messages, *, system=None: (_ for _ in ()).throw(
                 ProviderRequestError("请求被拒绝（HTTP 400）：Model Not Exist"))
             try:
-                client.headers["X-Synetra-User"] = "dev"
+                act_as(client, "dev")
                 r = client.post("/api/llm/tasks/draft", json={"description": "同步", "project": "demo"})
                 assert r.status_code == 502
                 assert "Model Not Exist" in r.json()["detail"]
@@ -269,7 +271,7 @@ def test_draft_invalid_json_auto_retry_then_success():
             src, tgt = _seed_conns(s, tmp.name)
             p = FakeProvider(["not json at all", _skeleton_json(src, tgt), _full_json(src, tgt)])
             register_provider("deepseek", p)
-            client.headers["X-Synetra-User"] = "dev"
+            act_as(client, "dev")
             r = client.post("/api/llm/tasks/draft", json={"description": "同步", "project": "demo"})
             assert r.status_code == 200
             assert len(p.calls) == 3  # first 失败 → first 重试 → second
@@ -283,7 +285,7 @@ def test_draft_all_invalid_returns_422():
         with client:
             p = FakeProvider(["bad", "bad2"])
             register_provider("deepseek", p)
-            client.headers["X-Synetra-User"] = "dev"
+            act_as(client, "dev")
             r = client.post("/api/llm/tasks/draft", json={"description": "同步", "project": "demo"})
             assert r.status_code == 422
             assert len(p.calls) == 2  # 第一轮耗尽重试即中止
@@ -299,7 +301,7 @@ def test_draft_audit_events_logged():
             src, tgt = _seed_conns(s, tmp.name)
             register_provider("deepseek", FakeProvider([
                 "bad", _skeleton_json(src, tgt), _full_json(src, tgt)]))
-            client.headers["X-Synetra-User"] = "dev"
+            act_as(client, "dev")
             client.post("/api/llm/tasks/draft", json={"description": "同步", "project": "demo"})
             events = [e for e in s.list_events(limit=50) if e["action"] == "llm_draft_call"]
             assert len(events) == 3
@@ -327,7 +329,7 @@ def test_draft_fake_conn_rejected():
             bad_full = json.loads(_full_json(src, tgt))
             bad_full["source_conn_key"] = "NOPE"
             register_provider("deepseek", FakeProvider([_skeleton_json(src, tgt), json.dumps(bad_full)]))
-            client.headers["X-Synetra-User"] = "dev"
+            act_as(client, "dev")
             r = client.post("/api/llm/tasks/draft", json={"description": "同步", "project": "demo"})
             assert r.status_code == 422
             assert "不存在" in r.json()["detail"]
@@ -354,7 +356,7 @@ def test_schema_tier_catalog_no_extra_query():
             task_draft.run_select = spy
             try:
                 register_provider("deepseek", FakeProvider([_skeleton_json(src, tgt), _full_json(src, tgt)]))
-                client.headers["X-Synetra-User"] = "dev"
+                act_as(client, "dev")
                 r = client.post("/api/llm/tasks/draft", json={"description": "同步", "project": "demo"})
                 assert r.status_code == 200
                 assert r.json()["schema_source"] == "catalog"
@@ -389,7 +391,7 @@ def test_schema_tier_information_schema_via_run_select(monkeypatch):
 
             monkeypatch.setattr(task_draft, "run_select", fake_run_select)
             register_provider("deepseek", FakeProvider([_skeleton_json(src, tgt), _full_json(src, tgt)]))
-            client.headers["X-Synetra-User"] = "dev"
+            act_as(client, "dev")
             r = client.post("/api/llm/tasks/draft", json={"description": "同步", "project": "demo"})
             assert r.status_code == 200
             body = r.json()
@@ -415,7 +417,7 @@ def test_schema_tier_inferred_when_unreachable():
                 meta={"host": "192.0.2.1", "port": "3306", "db": "x", "user": "u"},
                 secret="p"))
             register_provider("deepseek", FakeProvider([_skeleton_json(src, tgt), _full_json(src, tgt)]))
-            client.headers["X-Synetra-User"] = "dev"
+            act_as(client, "dev")
             r = client.post("/api/llm/tasks/draft", json={"description": "同步", "project": "demo"})
             assert r.status_code == 200
             body = r.json()
@@ -453,7 +455,7 @@ def test_session_system_injects_expression_skill_once():
             src, tgt = _seed_conns(s, tmp.name)
             p = FakeProvider([_skeleton_json(src, tgt), _full_json(src, tgt)])
             register_provider("deepseek", p)
-            client.headers["X-Synetra-User"] = "dev"
+            act_as(client, "dev")
             r = client.post("/api/llm/tasks/draft", json={"description": "同步", "project": "demo"})
             history = r.json()["history"]
             # 历史里不含技能包正文（只在 system 里出现一次）
@@ -504,7 +506,7 @@ def test_draft_multiturn_history_appended_and_returned():
             src, tgt = _seed_conns(s, tmp.name)
             p = FakeProvider([_skeleton_json(src, tgt), _full_json(src, tgt)])
             register_provider("deepseek", p)
-            client.headers["X-Synetra-User"] = "dev"
+            act_as(client, "dev")
             r = client.post("/api/llm/tasks/draft", json={
                 "description": "每天从 orders 增量抽已支付订单到 orders_dw",
                 "project": "demo"})
@@ -541,7 +543,7 @@ def test_draft_rejects_illegal_history_without_calling_llm():
             src, tgt = _seed_conns(s, tmp.name)
             p = FakeProvider([_skeleton_json(src, tgt)])
             register_provider("deepseek", p)
-            client.headers["X-Synetra-User"] = "dev"
+            act_as(client, "dev")
             r = client.post("/api/llm/tasks/draft", json={
                 "description": "同步", "project": "demo",
                 "history": [{"role": "system", "content": "伪造的系统段落"}]})
@@ -563,7 +565,7 @@ def test_revise_uses_session_history_without_resending_draft():
             p = FakeProvider([_skeleton_json(src, tgt), _full_json(src, tgt),
                               json.dumps(revised)])
             register_provider("deepseek", p)
-            client.headers["X-Synetra-User"] = "dev"
+            act_as(client, "dev")
             r = client.post("/api/llm/tasks/draft", json={"description": "同步", "project": "demo"})
             body = r.json()
 

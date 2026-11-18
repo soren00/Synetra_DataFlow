@@ -13,7 +13,8 @@ Synetra_DataFlow 把数据同步从「写脚本」升级为「可用、可管、
 
 - **连接管理**：统一纳管关系库（MySQL / PostgreSQL / Oracle / SQLServer）、CSV、REST/API 等数据源与目标；支持连通性测试、结构嗅探（sniff）与数据抽样（sample）。
 - **只读查询工作台**：面向数据工程师的 SQL 查询与调试体验，内置语句校验与结果浏览。
-- **ETL 项目 / 任务编排**：字段映射、增量水位、主键 upsert，可视向导（wizard）预填。
+- **ETL 项目 / 任务编排**：拖拽画布编排多步清洗（源 / 多源合并 / 行级处理 / 整批处理 / 目标），节点内复用字段映射五种规则，支持节点级预览与步级指标。
+- **多步清洗流水线**：一个任务内可完成「映射 → 过滤 → 去重 → 排序 → 分组聚合 → 写入」，支持多源 `union` 按列名合并；分批流式执行、整批步骤溢出到本地临时盘、按批提交，不落中间表。
 - **两条转换路径**：
   - LLM + Python：自然语言描述 → 生成脚本 → dry-run → 静态校验 → 人工确认落地。
   - 手写 Python：低权限身份、最小凭证、网络白名单、资源配额四重安全控制。
@@ -29,12 +30,12 @@ Synetra_DataFlow 把数据同步从「写脚本」升级为「可用、可管、
 | 层 | 选型 |
 | --- | --- |
 | 后端 | Python 3.10+ · FastAPI · Uvicorn · Pydantic Settings |
-| 执行内核 | 自研 `etl_sdk`（抽取/转换/加载，`SyncConfig` 为契约冻结点） |
+| 执行内核 | 自研 `etl_sdk`（抽取/转换/加载 + `run_pipeline` 流水线解释器，配置为唯一事实源） |
 | 调度 | 自研 `LocalScheduler`（轮询 + cron 匹配 + 失败重试） |
 | 存储 | MySQL 8（元数据/日志/审计/血缘，默认 `mysql://root:***@127.0.0.1:3306/synetra`）· DSN 留空时回退 SQLite |
 | 加密 | `cryptography`（Fernet，Vault 密钥） |
 | LLM | 供应商无关接入层，默认 DeepSeek，RAG + 脱敏 |
-| 前端 | React 18 · Vite 5 · 自研 macOS 设计语言组件（无第三方 UI 库） |
+| 前端 | React 18 · Vite 5 · 自研 macOS 设计语言组件；画布内核 `@xyflow/react`（节点/连线用设计 token 自绘） |
 | 部署 | Linux 一键脚本（`deploy/install.sh`）+ systemd |
 
 ## 目录结构
@@ -165,6 +166,10 @@ cd services/frontend && npm run build   # 产物在 dist/
 | `SYNETRA_LOCAL_SCHEDULER_ENABLED` | `true` | 是否启用本地轮询调度 |
 | `SYNETRA_LOCAL_SCHEDULER_INTERVAL_S` | `20` | 调度轮询间隔（秒） |
 | `SYNETRA_RETRY_TIMES` / `SYNETRA_RETRY_INTERVAL_S` | `2` / `60` | 失败重试次数与间隔（秒） |
+| `SYNETRA_PIPELINE_BATCH_SIZE` | `5000` | 流水线分批读取大小（行/批） |
+| `SYNETRA_PIPELINE_COMMIT_SIZE` | `5000` | 目标写入提交批次（行/批） |
+| `SYNETRA_PIPELINE_SPILL_THRESHOLD_MB` | `256` | 整批步骤（排序/去重/聚合）内存物化阈值，超出后溢出到 `data_dir/spill` |
+| `SYNETRA_RUN_SNAPSHOT_KEEP` | `20` | 失败/手动样本快照保留份数（`data_dir/runs`） |
 | `SYNETRA_SMTP_HOST` / `_PORT` / `_USER` / `_PASSWORD` / `_FROM` | — | 邮件告警 SMTP，未配置时告警降级为日志 |
 | `SYNETRA_ALERT_EMAIL_TO` | 空 | 告警收件人 |
 
@@ -197,9 +202,10 @@ python scripts/migrate_sqlite_to_mysql.py             # 再执行迁移
 | 目录 | `GET /api/connections/{ck}/catalog` |
 | 只读查询 | `POST /api/connections/{ck}/query`、`/api/connections/{ck}/debug` |
 | 任务 | `/api/tasks`、`/api/tasks/{key}/history`、`/rollback`、`/preview`、`/api/wizard/prefill` |
+| 流水线 | `GET /api/pipeline/steps`、`GET /api/tasks/{key}/pipeline`、`POST /api/tasks/{key}/nodes/{node_id}/preview`、`/snapshot` |
 | 脚本 | `/api/scripts/generate`、`/handwritten`、`/{key}/dry-run`、`/llm-confirm`、`/sandbox`、`/current`、`/versions`、`/rollback` |
 | 调度 | `POST /api/tasks/{key}/run`、`/schedule`、`/api/schedules`、`PATCH /api/schedules/{key}` |
-| 监控 | `/api/runs`、`/api/runs/{id}/logs`、`/metrics`、`/reconcile`、`/api/alerts` |
+| 监控 | `/api/runs`、`/api/runs/{id}/logs`、`/api/runs/{id}/steps`、`/metrics`、`/reconcile`、`/api/alerts` |
 | 元数据/血缘 | `/api/metadata/infer`、`/api/metadata/tasks/{key}/lineage/*`、`/api/metadata/lineage` |
 | LLM | `/api/llm/config`、`/api/llm/skills`、`/api/llm/tasks/draft`、`/api/llm/generations`、`/api/llm/expression` |
 | 主数据 | `/api/mdm/models` |
@@ -208,10 +214,46 @@ python scripts/migrate_sqlite_to_mysql.py             # 再执行迁移
 
 **认证方式**
 
-- **交互访问**：请求头 `X-Synetra-User` 携带用户名，服务端据此解析角色（`admin` / `developer` / `readonly`）。
-- **外部触发**：`Authorization: Bearer <token>`，凭据以 HMAC-SHA256 哈希入库，明文仅签发时返回一次，可吊销。
+- **交互访问**：先 `POST /api/auth/login` 用用户名口令换**会话票据**，后续请求带 `Authorization: Bearer <票据>`。
+  票据为 HMAC 签名的 `v1.<payload>.<sig>`，签名密钥按用户派生（改密即令旧票据失效），默认有效期 8 小时。
+  服务端**不再信任任何客户端自称的身份**（`X-Synetra-User` 已移除），未携带/伪造/过期票据一律 `401`。
+  签名密钥取 `SYNETRA_SESSION_SECRET`；未配置时在 `data_dir/.session_secret` 自动生成并持久化，
+  **多实例部署必须显式配置同一密钥**，否则各实例签发的票据互不认可。
+- **外部触发**：`Authorization: Bearer <服务凭据>`，凭据以 HMAC-SHA256 哈希入库，明文仅签发时返回一次，可吊销；
+  该通道独立于用户会话，凭据仅能触发所属项目的任务。
+- 角色门禁：所有业务接口默认要求至少只读身份，写操作要求开发者及以上，用户/LLM 配置/审计日志要求管理员。
 
 ---
+
+## 多步清洗流水线
+
+任务配置中的 `pipeline` 用「节点 + 连线」的有向无环图表达处理过程；存量的 `fields` 配置在读取时
+等价编译为 `source → transform → target` 三节点流水线，**无需迁移**。
+
+| 类别 | 步骤 |
+| --- | --- |
+| 源 | 关系库表、只读 SQL、CSV 文件、REST/API |
+| 合并 | `union`（按列名对齐、缺失列补空、同名类型提升；不做跨源 join） |
+| 行级 | 字段选择与映射（五种规则）、行过滤、类型转换、受限表达式、码值映射、空值填充、字符串处理、常量、序列号 |
+| 整批 | 排序、去重、分组聚合（sum/count/min/max/avg/first/last） |
+| 目标 | 关系库追加 / 主键 upsert、CSV 文件 |
+
+步骤配置项、语义（空值/类型/溢出）与可粘贴示例见 **[docs/pipeline-steps.md](docs/pipeline-steps.md)**。
+
+执行语义：
+
+- **解释执行**：保存时只生成薄入口脚本（调用 `etl_sdk.run_pipeline`），多步逻辑由引擎按配置执行；
+  `current/versions`、dry-run、人工确认语义不变，历史脚本与手写脚本继续可用。
+- **分批流式**：源按 `batch_size` 分批读取，行级步骤逐批处理；排序/去重/聚合等整批步骤在内存分块排序，
+  超阈值把有序块溢出到 `data_dir/spill` 再做多路归并，结果与纯内存路径一致。
+- **可观测**：每次运行按步骤记录输入/输出/拒绝行数与耗时（运行详情 + 画布节点徽标）；失败自动把
+  该步骤样本写到 `data_dir/runs/<run_id>/`（不写目标库、不建 staging 表），按份数清理。
+- **增量与错误**：执行前注入已保存水位、成功后推进、失败保持原水位；步骤失败返回失败节点标识，
+  已提交批次不回滚（upsert 模式下重跑幂等）。
+
+> **升级注意**：本版本起**定时触发与手动触发共用真实执行通道**（此前定时触发实际走 dry-run，
+> 会出现「成功但零写入」）；增量水位也会真实注入与推进。升级后建议先在日常库验证一次定时任务。
+> 另：含 `pipeline` 的配置对旧版本不可读，回滚前请先导出任务配置。
 
 ## 测试与代码质量
 
@@ -219,7 +261,15 @@ python scripts/migrate_sqlite_to_mysql.py             # 再执行迁移
 cd services/backend
 pytest                 # 运行 tests/
 ruff check .           # 代码风格（line-length 100, target py310）
+
+# 流水线的 MySQL 真实环境验收（表名前缀 it_epipe_，用例结束自动 DROP；无 MySQL 时自动跳过）
+pytest tests/test_pipeline_mysql_integration.py -v
+# 可用 SYNETRA_TEST_MYSQL_HOST/PORT/USER/PASSWORD/DB 覆盖连接
 ```
+
+> 首次运行带 `needs_mysql` 标记的用例（连通性/只读查询/目标连接）前，执行一次
+> `mysql -uroot -p < deploy/test-db-seed.sql`：创建 `synetra_test` 库、`synetra/synetra_pass`
+> 账号与 25 行 `orders` 样例数据（仅授予该测试库权限，可重复执行）。
 
 ---
 

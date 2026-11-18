@@ -7,6 +7,8 @@ import tempfile
 
 from fastapi.testclient import TestClient
 
+from authhelpers import act_as
+
 
 def _client():
     tmp = tempfile.TemporaryDirectory()
@@ -19,7 +21,7 @@ def _client():
 
     Store(get_settings().data_dir).upsert_user("admin", "admin")
     client = TestClient(app)
-    client.headers["X-Synetra-User"] = "admin"
+    act_as(client, "admin")
     return client, tmp
 
 

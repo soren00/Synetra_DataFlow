@@ -17,7 +17,7 @@ from app.auth import require_role
 from app.core.config import get_settings
 from app.models.access import Role
 from app.schedule import new_run_id, run_with_retry
-from app.scripting.executor import run_real_script
+from app.scripting.run_task import execute_task, pipeline_sizes
 from app.scripts import ScriptStore
 from app.store import Store
 
@@ -63,23 +63,15 @@ def run_task(task_key: str, _: DeveloperDep, store: StoreDep, scripts: ScriptsDe
     cfg = _task_or_404(store, task_key)
     run_id = new_run_id()
     via = "schedule" if (cfg.schedule or "").strip() else "manual"
+    batch_size, commit_size = pipeline_sizes(cfg)
 
-    def execute():
-        if not scripts.has_current(task_key):
-            return {"status": "failed", "rows": 0,
-                    "error": "该任务尚无已确认脚本，请先生成/编写脚本"}
-        # 真实执行：不置 dry-run，readers/writers 走真实 DB 路径
-        res = run_real_script(scripts.read_current(task_key), cfg.model_dump())
-        if res.ok:
-            store.append_run_log(run_id, f"执行完成，写入 {res.total_records()} 行", level="info")
-            return {"status": "success", "rows": res.total_records()}
-        store.append_run_log(run_id, f"脚本执行失败: {res.stderr.strip()}", level="error")
-        return {"status": "failed", "rows": 0, "error": res.stderr.strip()}
-
-    store.start_run(run_id, task_key, cfg.project, via, attempt=1)
-    status = run_with_retry(store, run_id, execute,
-                            retry_times=get_settings().retry_times,
-                            retry_interval_s=get_settings().retry_interval_s)
+    store.start_run(run_id, task_key, cfg.project, via, attempt=1,
+                    exec_channel="real", batch_size=batch_size, commit_size=commit_size)
+    status = run_with_retry(
+        store, run_id,
+        lambda: execute_task(store, scripts, task_key, run_id),
+        retry_times=get_settings().retry_times,
+        retry_interval_s=get_settings().retry_interval_s)
     if status == "failed":
         run = store.get_run(run_id)
         err = (run or {}).get("error") or ""

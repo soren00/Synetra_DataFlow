@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Badge, Button, Callout, Card, ConfirmDialog, Empty, Icon, Input, Modal, ModalFooter, Row, Segmented, Select, Table, Textarea } from "../components/ui";
 import { api } from "../api/client";
+import PipelineCanvas from "../components/PipelineCanvas";
 
 const STATE_TONE = { success: "success", running: "info", failed: "danger", retrying: "warning", waiting: "warning" };
 const STATE_CN = { success: "成功", running: "运行中", failed: "失败", retrying: "重试中", waiting: "等待重试", unscheduled: "未调度" };
@@ -86,6 +87,10 @@ export default function Tasks({ project, onBack }) {
   const [fieldErrors, setFieldErrors] = useState({});  // 后端字段级校验详情（字段名 → 原因）
   // AI 生成表达式：{ index, prompt, busy, msg }，仅对当前正在生成的那条规则生效
   const [ai, setAi] = useState(null);
+  // 多步清洗流水线（画布编排结果；为空表示使用字段规则的等价三节点编译）
+  const [pipeline, setPipeline] = useState(null);
+  const [canvasOpen, setCanvasOpen] = useState(false);
+  const [canvasSeed, setCanvasSeed] = useState(null);
 
   const load = () => {
     // 任务与运行信息按当前项目加载，实现项目间隔离展示；连接保持全局（不做项目过滤）
@@ -128,6 +133,42 @@ export default function Tasks({ project, onBack }) {
   };
 
   const setRule = (i, k, v) => setFields((fs) => fs.map((fsx, j) => (j === i ? { ...fsx, [k]: v } : fsx)));
+
+  // 无已保存流水线时，用当前表单构造等价三节点草稿供画布起步
+  const draftPipeline = () => ({
+    version: 1,
+    batch_size: 5000,
+    commit_size: 5000,
+    nodes: [
+      { id: "source", type: "source_table", name: "数据源",
+        config: { conn_key: form.source_conn_key, object: form.source_object,
+                  watermark_field: form.mode === "incremental" ? form.incremental_field : "" } },
+      { id: "transform", type: "select", name: "字段映射",
+        config: { rules: fields.map((x) => ({
+          kind: x.kind, source: x.source, target: x.target || x.source,
+          cast_to: x.cast_to || null, null_default: x.null_default || null,
+          constant_value: x.constant_value || null, expression: x.expression || null,
+        })) } },
+      { id: "target", type: "target_table", name: "数据目标",
+        config: { conn_key: form.target_conn_key, object: form.target_object,
+                  mode: form.mode === "upsert" ? "upsert" : "append",
+                  primary_keys: form.primary_keys.split(",").map((s) => s.trim()).filter(Boolean) } },
+    ],
+    edges: [{ source: "source", target: "transform" },
+            { source: "transform", target: "target" }],
+  });
+
+  const openCanvas = async () => {
+    let seed = pipeline;
+    if (!seed && editKey) {
+      try {
+        const r = await api.get(`/tasks/${editKey}/pipeline`);
+        seed = (r.pipeline?.nodes || []).length ? r.pipeline : null;
+      } catch { seed = null; }
+    }
+    setCanvasSeed(seed || draftPipeline());
+    setCanvasOpen(true);
+  };
 
   // AI 生成表达式：只回填建议，不自动保存；失败保留用户已填内容
   const runAiExpression = async () => {
@@ -176,6 +217,7 @@ export default function Tasks({ project, onBack }) {
       first_run_policy: inc.first_run_policy || "all", schedule: t.schedule || "",
     });
     setFields((t.fields || []).map((x) => ({ ...x })));
+    setPipeline(t.pipeline || null);
     setSchedPick(matchSchedPick(t.schedule) ? t.schedule : (t.schedule ? "custom" : ""));
     setEditKey(t.task_key); setMsg(null); setShow(true);
   };
@@ -198,6 +240,8 @@ export default function Tasks({ project, onBack }) {
         constant_value: x.constant_value || null, expression: x.expression || null,
       })),
       schedule: form.schedule,
+      // 画布编排结果优先：存在时由它表达多步清洗与多源合并
+      ...(pipeline && (pipeline.nodes || []).length ? { pipeline } : {}),
     };
     try {
       await api.post("/tasks", { project: activeProject, name: form.name, config: cfg, task_key: editKey || null });
@@ -258,7 +302,7 @@ export default function Tasks({ project, onBack }) {
           <Button variant="primary" icon="plus" onClick={() => {
             setEditKey(null);
             setForm({ ...form, name: "", source_conn_key: sources[0]?.conn_key || "", target_conn_key: targets[0]?.conn_key || "" });
-            setFields([]); setSchedPick(""); setMsg(null); setShow(true);
+            setFields([]); setPipeline(null); setSchedPick(""); setMsg(null); setShow(true);
           }}>新建任务</Button>
         </Row>
       </div>
@@ -366,6 +410,7 @@ export default function Tasks({ project, onBack }) {
           <Row className="mac-end" style={{ gap: 8, alignItems: "center", marginTop: 4 }}>
             <span className="mac-label" style={{ margin: 0 }}>字段转换</span>
             <div style={{ flex: 1 }} />
+            <Button variant="ghost" onClick={openCanvas}>可视化编排（多步清洗）</Button>
             <Button variant="ghost" onClick={() => setFields((fs) => [...fs, { source: "", target: "", kind: "direct" }])}>添加规则</Button>
           </Row>
           {fields.length === 0
@@ -454,6 +499,26 @@ export default function Tasks({ project, onBack }) {
               <Input value={form.schedule} onChange={(e) => setForm({ ...form, schedule: e.target.value })} placeholder="0 2 * * *" />
             </div>
           )}
+        </Modal>
+      )}
+
+      {canvasOpen && (
+        <Modal
+          title="多步清洗编排"
+          onClose={() => setCanvasOpen(false)}
+          width={1360}
+          bodyStyle={{ maxHeight: "84vh", padding: 12 }}
+          footer={<ModalFooter onCancel={() => setCanvasOpen(false)} onOk={() => setCanvasOpen(false)} okText="完成编排" />}
+        >
+          {!editKey && (
+            <Callout tone="info">新任务保存后返回编辑，即可在节点抽屉里对该节点做单节点预览。</Callout>
+          )}
+          <PipelineCanvas
+            taskKey={editKey}
+            initialPipeline={canvasSeed}
+            onChange={setPipeline}
+            fieldErrors={fieldErrors}
+          />
         </Modal>
       )}
 

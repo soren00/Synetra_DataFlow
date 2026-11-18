@@ -7,6 +7,8 @@ import tempfile
 
 from fastapi.testclient import TestClient
 
+from authhelpers import act_as
+
 from app.core.config import get_settings
 from app.llm.generator import ScriptGenerator
 from app.llm.provider import LLMProvider, get_provider, model_info, register_provider
@@ -27,7 +29,7 @@ def _client():
 
     Store(get_settings().data_dir).upsert_user("admin", "admin")
     client = TestClient(app)
-    client.headers["X-Synetra-User"] = "admin"
+    act_as(client, "admin")
     return client, tmp
 
 

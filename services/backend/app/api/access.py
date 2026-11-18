@@ -9,28 +9,27 @@
 - POST   /api/projects/{p}/credentials    (developer+) 签发外部触发凭据（明文仅一次）
 - GET    /api/projects/{p}/credentials    (developer+) 列出
 - POST   /api/projects/{p}/credentials/{id}/revoke  (developer+) 吊销
-- POST   /api/trigger/{task_key}          (Bearer 服务凭据) 触发同步，返回回执
+
+外部触发（Bearer 服务凭据）在 `app/api/trigger.py`，与会话票据通道隔离。
 """
 
 from __future__ import annotations
 
+import json
 import secrets
-from datetime import datetime, timezone
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Header, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 
 from app.auth import (
     AuthContext,
     enforce_project,
-    hash_credential_token,
     issue_credential_token,
     require_role,
 )
 from app.core.config import get_settings
-from app.models.access import Role, ServiceCredential, TriggerReceipt
-from app.schedule import new_run_id
+from app.models.access import Role, ServiceCredential
 from app.store import Store
 
 
@@ -98,9 +97,10 @@ def update_user(username: str, body: UserUpdate, auth: AdminDep, store: StoreDep
         raise HTTPException(status_code=404, detail="user not found")
     if target is None:
         raise HTTPException(status_code=404, detail="user not found")
-    _guard_last_admin(store, target, role=body.role, enabled=body.enabled)
+    # 自助停用先于「最后一名管理员」保护判定：自己的账号本就不该被停用
     if username == auth.username and body.enabled is False:
         raise HTTPException(status_code=403, detail="不能停用自己的账号")
+    _guard_last_admin(store, target, role=body.role, enabled=body.enabled)
     u = store.update_user(username, role=body.role.value if body.role else None,
                           display_name=body.display_name, enabled=body.enabled)
     return {k: (bool(u[k]) if k == "enabled" else u[k])
@@ -172,41 +172,20 @@ def revoke_credential(project: str, cred_id: str, auth: DeveloperDepInstance, st
     return {"cred_id": cred_id, "revoked": True}
 
 
-# ---- 外部触发（8.2 的凭据前置于此；DS 触发在 8.x 对接） ----
+# ---- 审计日志查询（仅管理员） ----
 
-@router.post("/trigger/{task_key}", status_code=status.HTTP_202_ACCEPTED)
-def external_trigger(
-    task_key: str,
-    store: StoreDep,
-    authorization: Annotated[str | None, Header()] = None,
-) -> dict:
-    token = _bearer(authorization)
-    if not token:
-        raise HTTPException(status_code=401, detail="缺少凭据")
-    try:
-        task = store.get_task(task_key)
-    except KeyError:
-        raise HTTPException(status_code=404, detail="task not found")
-    # 凭据仅能触发本项目任务：token_hash + project 必须匹配且未吊销
-    if not store.verify_credential(hash_credential_token(token), task.project):
-        raise HTTPException(status_code=401, detail="凭据无效、已吊销或越项目")
-    trigger_id = new_id()
-    via = "external_api"
-    fired_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
-    store.record_trigger(trigger_id, task_key, task.project, via, actor="external")
-    # 8.2 同步触发：以外部 API 触发一个真实运行记录，立即返回触发回执（含 run_id）
-    run_id = new_run_id()
-    store.start_run(run_id, task_key, task.project, via=via, attempt=1)
-    store.append_run_log(run_id, "外部 API 触发，已入队（执行结果走监控查询）", level="info")
-    return TriggerReceipt(trigger_id=trigger_id, task_key=task_key,
-                          project=task.project, fired_at=fired_at,
-                          run_id=run_id).model_dump()
+@router.get("/audit/events")
+def list_audit_events(_: AdminDep, store: StoreDep,
+                      project: str = "", action: str = "", limit: int = 100) -> list[dict]:
+    """按项目/操作类型过滤的审计日志（倒序）；响应中不含任何明文凭证。"""
+    rows = store.list_events(project=project or None, action=action or None, limit=limit)
+    for row in rows:
+        raw = row.pop("detail_json", "") or "{}"
+        try:
+            row["detail"] = json.loads(raw)
+        except json.JSONDecodeError:
+            row["detail"] = {"raw": raw}
+    return rows
 
 
-def _bearer(header: str | None) -> str | None:
-    if not header:
-        return None
-    parts = header.split()
-    if len(parts) == 2 and parts[0].lower() == "bearer":
-        return parts[1].strip()
-    return None
+# 外部触发（POST /api/trigger/{task_key}）走独立的服务凭据通道，见 app/api/trigger.py

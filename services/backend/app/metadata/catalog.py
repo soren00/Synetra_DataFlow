@@ -9,6 +9,7 @@
 
 from __future__ import annotations
 
+import json
 import sqlite3
 import threading
 from datetime import datetime, timezone
@@ -35,6 +36,7 @@ CREATE TABLE IF NOT EXISTS lineage (
     target TEXT NOT NULL,
     field TEXT,                 -- 非空=字段级；NULL=仅表级
     kind TEXT NOT NULL DEFAULT 'field',
+    path TEXT,                  -- 逐跳路径（JSON：[[节点, 字段], ...]），旧数据为空
     UNIQUE (task_key, source, target, field)
 );
 """
@@ -59,6 +61,7 @@ CREATE TABLE IF NOT EXISTS lineage (
     target VARCHAR(255) NOT NULL,
     field VARCHAR(100) NULL,
     kind VARCHAR(32) NOT NULL DEFAULT 'field',
+    path LONGTEXT NULL,
     UNIQUE KEY uq_lineage (task_key, source, target, field)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 """
@@ -94,7 +97,22 @@ class Catalog:
             schema = _SCHEMA_MYSQL if self.db.is_mysql else _SCHEMA
             with self.db.connect() as c:
                 c.executescript(schema)
+                # 存量库迁移：lineage 补 path 列（逐跳路径），已存在则跳过
+                if "path" not in self._existing_columns(c, "lineage"):
+                    c.execute("ALTER TABLE lineage ADD COLUMN path "
+                              + ("LONGTEXT NULL" if self.db.is_mysql else "TEXT"))
             _INITIALIZED.add(target)
+
+    def _existing_columns(self, c, table: str) -> set[str]:
+        if self.db.is_mysql:
+            rows = c.execute(
+                "SELECT COLUMN_NAME AS col FROM information_schema.columns"
+                " WHERE table_schema=DATABASE() AND table_name=?",
+                (table,),
+            ).fetchall()
+            return {r["col"] for r in rows}
+        rows = c.execute(f"PRAGMA table_info({table})").fetchall()
+        return {r["name"] for r in rows}
 
     # ---- 表结构字典（10.1/10.2） ----
 
@@ -136,30 +154,48 @@ class Catalog:
     # ---- 血缘（10.3/10.4） ----
 
     def store_lineage(self, task_key: str, edges: list[dict]) -> int:
-        """edges: [{source, target, field|None}]；同一任务重复保存为覆盖。"""
+        """edges: [{source, target, field|None, path?}]；同一任务重复保存为覆盖。"""
         with self.db.connect() as c:
             c.execute("DELETE FROM lineage WHERE task_key=?", (task_key,))
             for e in edges:
                 field = e.get("field")
                 kind = "field" if field is not None else "table"
+                path = e.get("path")
                 c.execute(
-                    "INSERT OR IGNORE INTO lineage(task_key, source, target, field, kind)"
-                    " VALUES (?,?,?,?,?)",
-                    (task_key, e["source"], e["target"], field, kind),
+                    "INSERT OR IGNORE INTO lineage(task_key, source, target, field, kind, path)"
+                    " VALUES (?,?,?,?,?,?)",
+                    (task_key, e["source"], e["target"], field, kind,
+                     json.dumps(path, ensure_ascii=False) if path else None),
                 )
         return len(edges)
+
+    @staticmethod
+    def _edge_dict(row) -> dict:
+        """把行转为边字典；`path` 仅为非空时出现（保持旧调用方兼容）。"""
+        out = dict(row)
+        raw = out.get("path")
+        if raw:
+            try:
+                out["path"] = json.loads(raw)
+            except (TypeError, ValueError):
+                out["path"] = None
+        else:
+            out.pop("path", None)
+        return out
 
     def lineage_for_task(self, task_key: str) -> list[dict]:
         with self.db.connect() as c:
             c.row_factory = sqlite3.Row
             rows = c.execute(
-                "SELECT source, target, field, kind FROM lineage WHERE task_key=? ORDER BY id",
+                "SELECT source, target, field, kind, path FROM lineage"
+                " WHERE task_key=? ORDER BY id",
                 (task_key,),
             ).fetchall()
-        return [dict(r) for r in rows]
+        return [self._edge_dict(r) for r in rows]
 
     def search_lineage(self, source: str | None = None, target: str | None = None) -> list[dict]:
-        sql, args = "SELECT task_key, source, target, field, kind FROM lineage WHERE 1=1", []
+        sql, args = ("SELECT task_key, source, target, field, kind, path"
+                     " FROM lineage WHERE 1=1"), []
         if source:
             sql += " AND source=?"
             args.append(source)
@@ -169,7 +205,7 @@ class Catalog:
         with self.db.connect() as c:
             c.row_factory = sqlite3.Row
             rows = c.execute(sql, args).fetchall()
-        return [dict(r) for r in rows]
+        return [self._edge_dict(r) for r in rows]
 
     # ---- 统计（血缘视图用） ----
 
@@ -184,8 +220,125 @@ class Catalog:
         }
 
 
-def field_lineage_from_config(cfg: dict) -> list[dict]:
-    """从任务配置静态推导字段级血缘（10.3）：source_object.字段 -> target_object.字段。"""
+def _node_table(node) -> str:
+    cfg = node.config or {}
+    return str(cfg.get("object") or cfg.get("path") or "")
+
+
+def _out_fields(pipe, node_id: str) -> list[str] | None:
+    """节点输出的字段集合；None 表示透传（无法静态枚举）。"""
+    from app.models.pipeline import StepType
+
+    node = pipe.node(node_id)
+    cfg = node.config or {}
+    if node.type is StepType.SELECT:
+        fields = [str(r.get("target") or r.get("source") or "") for r in (cfg.get("rules") or [])]
+        return [f for f in fields if f] or None
+    if node.type in (StepType.EXPRESSION, StepType.CONSTANT, StepType.SEQUENCE):
+        target = str(cfg.get("target") or "")
+        return [target] if target else None
+    if node.type is StepType.AGGREGATE:
+        fields = [str(f) for f in (cfg.get("group_by") or [])]
+        fields += [str(a.get("target") or f"{a.get('func')}_{a.get('field', '')}")
+                   for a in (cfg.get("aggregations") or [])]
+        return [f for f in fields if f] or None
+    if node.type is StepType.UNION:
+        acc: list[str] = []
+        for up in pipe.upstream_ids(node_id):
+            sub = _out_fields(pipe, up)
+            if sub is None:
+                return None
+            acc.extend(x for x in sub if x not in acc)
+        return acc or None
+    if node.type in (StepType.CAST, StepType.NULL_FILL, StepType.STRING_OPS,
+                     StepType.VALUE_MAP):
+        target = str(cfg.get("target") or cfg.get("field") or "")
+        return [target] if target else None
+    return None
+
+
+def _paths(pipe, node_id: str, field: str) -> list[list[tuple[str, str]]]:
+    """回溯某字段的来源链（根源 → 当前节点）；派生字段返回自身作为起点。"""
+    from app.models.pipeline import StepType
+
+    node = pipe.node(node_id)
+    cfg = node.config or {}
+    ups = pipe.upstream_ids(node_id)
+    if not ups:
+        return [[(node_id, field)]]
+    if node.type is StepType.SELECT:
+        for r in (cfg.get("rules") or []):
+            if str(r.get("target") or r.get("source")) == field:
+                if r.get("kind") == "constant":
+                    return [[(node_id, field)]]
+                src = str(r.get("source") or field)
+                return [[*p, (node_id, field)] for p in _paths(pipe, ups[0], src)]
+        return [[(node_id, field)]]
+    if node.type is StepType.UNION:
+        out: list[list[tuple[str, str]]] = []
+        for up in ups:
+            out.extend([[*p, (node_id, field)] for p in _paths(pipe, up, field)])
+        return out
+    if node.type in (StepType.CAST, StepType.NULL_FILL, StepType.STRING_OPS,
+                     StepType.VALUE_MAP):
+        target = str(cfg.get("target") or cfg.get("field") or "")
+        src = str(cfg.get("field") or field) if field == target else field
+        return [[*p, (node_id, field)] for p in _paths(pipe, ups[0], src)]
+    if node.type in (StepType.EXPRESSION, StepType.CONSTANT, StepType.SEQUENCE,
+                     StepType.AGGREGATE):
+        return [[(node_id, field)]]
+    return [[*p, (node_id, field)] for p in _paths(pipe, ups[0], field)]
+
+
+def _source_table_of(pipe, node_id: str) -> str:
+    node = pipe.node(node_id)
+    ups = pipe.upstream_ids(node_id)
+    if not ups:
+        return _node_table(node)
+    return _source_table_of(pipe, ups[0])
+
+
+def field_lineage_from_pipeline(pipe, cfg: dict | None = None) -> list[dict]:
+    """按流水线节点逐跳推导字段级血缘；合并节点记录全部上游来源。"""
+    from app.models.pipeline import StepType  # noqa: F401 - 类型语义说明用
+
+    edges: list[dict] = []
+    seen: set[tuple[str, str, str]] = set()
+    for tgt in pipe.target_nodes():
+        tgt_table = _node_table(tgt) or (cfg or {}).get("target_object") or "?"
+        for up in pipe.upstream_ids(tgt.id):
+            fields = _out_fields(pipe, up)
+            if fields is None:
+                src_table = _source_table_of(pipe, up) or "?"
+                edges.append({"source": src_table, "target": tgt_table, "field": None})
+                continue
+            for f in fields:
+                for path in _paths(pipe, up, f):
+                    src_node, src_field = path[0]
+                    src_table = _node_table(pipe.node(src_node))
+                    if not src_table:
+                        # 派生字段（常量/表达式/聚合等）没有可追溯的原始列，不伪造来源
+                        continue
+                    src_ref = f"{src_table}.{src_field}"
+                    key = (src_ref, f"{tgt_table}.{f}", f)
+                    if key in seen:
+                        continue
+                    seen.add(key)
+                    edges.append({
+                        "source": src_ref,
+                        "target": f"{tgt_table}.{f}",
+                        "field": f,
+                        "path": [[n, fl] for n, fl in path] + [[tgt.id, f]],
+                    })
+    if not edges:
+        source = (cfg or {}).get("source_object") or "?"
+        target = (cfg or {}).get("target_object") or "?"
+        edges.append({"source": source, "target": target, "field": None})
+    return edges
+
+
+def _legacy_lineage(cfg: dict) -> list[dict]:
+    """字段规则配置无法编译时的兜底血缘（保持旧语义）。"""
     source = cfg.get("source_object") or "?"
     target = cfg.get("target_object") or "?"
     edges: list[dict] = []
@@ -196,10 +349,21 @@ def field_lineage_from_config(cfg: dict) -> list[dict]:
             continue
         edges.append({"source": f"{source}.{src_field}", "target": f"{target}.{tgt_field}",
                       "field": tgt_field})
-    # 无字段级信息时为表级
     if not edges:
         edges.append({"source": source, "target": target, "field": None})
     return edges
+
+
+def field_lineage_from_config(cfg: dict) -> list[dict]:
+    """从任务配置静态推导字段级血缘：按流水线逐跳推导，旧配置先等价编译。"""
+    try:
+        from app.etl_sdk.pipeline.compile import compile_task_pipeline
+        from app.models.task_config import TaskConfig
+
+        pipe = compile_task_pipeline(TaskConfig.model_validate(cfg))
+    except Exception:  # noqa: BLE001 - 配置不完整时退回旧语义，不阻断保存
+        return _legacy_lineage(cfg)
+    return field_lineage_from_pipeline(pipe, cfg)
 
 
 def table_lineage_from_task(cfg: dict) -> list[dict]:

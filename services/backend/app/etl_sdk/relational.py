@@ -145,6 +145,66 @@ class _BaseRelational:
             except Exception:  # noqa: BLE001, S110 - 清理阶段失败不影响主结果
                 pass
 
+    # ---- 分批读取与分批提交（流式执行） ----
+
+    def extract_batches(self, sql: str, params: list | None = None,
+                        batch_size: int = 5000):
+        """以游标分批读取行集，逐批 yield（不整体载入内存）。"""
+        conn = self.connect()
+        try:
+            cur = conn.cursor()
+            if params:
+                cur.execute(sql, params)
+            else:
+                cur.execute(sql)
+            cols = [d[0] for d in cur.description] if cur.description else []
+            size = max(1, int(batch_size))
+            while True:
+                chunk = cur.fetchmany(size)
+                if not chunk:
+                    break
+                yield [dict(zip(cols, row)) for row in chunk]
+        except Exception as e:
+            raise ConnectorError(f"{self.ctype.value} 分批抽取失败: {e}") from e
+        finally:
+            try:
+                self.close()
+            except Exception:  # noqa: BLE001, S110 - 清理阶段失败不影响主结果
+                pass
+
+    def load_batches(self, table: str, batches, mode: str,
+                     primary_keys: list[str], columns: list[dict] | None = None,
+                     commit_size: int = 5000,
+                     watermark_field: str | None = None) -> LoadSummary:
+        """按批写入并逐批提交；已提交批次不回滚（upsert 下重跑幂等）。"""
+        conn = self.connect()
+        total = 0
+        ensured = False
+        try:
+            cur = conn.cursor()
+            for batch in batches:
+                if not batch:
+                    continue
+                cols = list(batch[0].keys())
+                if not ensured:
+                    self._ensure_table(cur, conn, table, columns, primary_keys, batch)
+                    ensured = True
+                if mode == "upsert":
+                    self._upsert(cur, conn, table, cols, batch, primary_keys)
+                else:
+                    self._append(cur, conn, table, cols, batch)
+                conn.commit()
+                total += len(batch)
+            return LoadSummary(conn_key=self.ctype.value, table=table, mode=mode,
+                               rows=total, watermark_field=watermark_field)
+        except Exception as e:
+            raise ConnectorError(f"{self.ctype.value} 分批加载失败: {e}") from e
+        finally:
+            try:
+                self.close()
+            except Exception:  # noqa: BLE001, S110 - 清理阶段失败不影响主结果
+                pass
+
     # ---- 自动建表（尽力而为：仅表缺失时 CREATE，已存在则跳过） ----
 
     def _q(self, ident: str) -> str:

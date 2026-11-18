@@ -28,6 +28,12 @@ class Settings(BaseSettings):
     # 本地数据目录（Vault 密钥/密文、脚本产物；未配置 DSN 时也用于 SQLite 回退）
     data_dir: str = "data"
 
+    # 会话票据（认证）：签名密钥与有效期。
+    # 密钥留空时在 data_dir/.session_secret 自动生成并持久化；
+    # 多实例部署必须显式配置同一密钥，否则各实例签发的票据互不认可。
+    session_secret: str = ""
+    session_ttl_minutes: int = 480
+
     # 元数据/日志库（元数据、血缘、审计、运行记录）。
     # 形如 mysql://user:password@host:port/dbname?charset=utf8mb4；
     # 留空则回退到 data_dir/synetra.db（本地开发/测试）。
@@ -49,6 +55,12 @@ class Settings(BaseSettings):
     # 失败重试（8.3）：默认次数与间隔秒
     retry_times: int = 2
     retry_interval_s: int = 60
+
+    # 流水线执行（多步清洗）：批次读取/提交大小、内存物化阈值、失败样本保留份数
+    pipeline_batch_size: int = 5000
+    pipeline_commit_size: int = 5000
+    pipeline_spill_threshold_mb: int = 256
+    run_snapshot_keep: int = 20
 
     # 邮件告警（8.3 / 9.5）：SMTP 配置，未配置时记日志降级
     smtp_host: str = ""

@@ -1,19 +1,21 @@
 """认证与会话、系统资源监控（任务 7.x / 9.6）。
 
-- 登录：POST /api/auth/login 校验用户名+密码（PBKDF2），成功返回身份；鉴权仍由角色模型兜底。
-- 系统资源：GET /api/monitor/system 读取主机 CPU/内存/磁盘占用（读取 /proc，无需系统依赖）。
+- 登录：POST /api/auth/login 校验用户名+密码（PBKDF2），成功签发会话票据。
+- 系统资源：GET /api/monitor/system 读取主机 CPU/内存/磁盘占用；非 Linux 平台降级为
+  `supported=false` 与零值，不因缺少 /proc 而 500。
 """
 
 from __future__ import annotations
 
 import os
+import socket
 import time
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
-from app.auth import AuthContext, StoreDep, require_role
+from app.auth import AuthContext, StoreDep, issue_session_token, require_role
 from app.models.access import Role
 
 # 注意：统一前缀 /api 由 main.py 注册时追加，此处不重复定义。
@@ -34,10 +36,15 @@ class ChangePasswordRequest(BaseModel):
 
 @router.post("/auth/login")
 def login(req: LoginRequest, store: StoreDep) -> dict:
+    """校验口令并签发会话票据；票据是后续请求的唯一身份来源。"""
     user = store.verify_credentials(req.username, req.password)
     if user is None:
         raise HTTPException(status_code=401, detail="用户名或密码错误")
-    return {"username": user["username"], "role": user["role"]}
+    token, expires_at = issue_session_token(user["username"], store)
+    store.log_event(actor=user["username"], project="", action="auth_login",
+                    detail={"role": user["role"]})
+    return {"username": user["username"], "role": user["role"],
+            "token": token, "expires_at": expires_at}
 
 
 @router.post("/auth/change-password")
@@ -52,17 +59,25 @@ def change_password(req: ChangePasswordRequest, auth: AuthorizedDep,
     return {"username": auth.username, "updated": True}
 
 
-# ---- 系统资源监控（/proc 实现，无第三方依赖） ----
+# ---- 系统资源监控（/proc 实现，无第三方依赖；非 Linux 平台降级为"不支持"） ----
 
-def _cpu_percent() -> int:
+def _proc_available() -> bool:
+    """主机资源采集能力：/proc 与 statvfs 同时可用（Linux）才视为受支持。"""
+    return os.path.exists("/proc/stat") and hasattr(os, "statvfs")
+
+
+def _cpu_percent() -> int | None:
     def _read() -> list[int]:
         with open("/proc/stat", encoding="utf-8") as f:
             parts = f.readline().split()[1:]
         return [int(x) for x in parts]
 
-    a = _read()
-    time.sleep(0.2)
-    b = _read()
+    try:
+        a = _read()
+        time.sleep(0.2)
+        b = _read()
+    except (OSError, ValueError, IndexError):
+        return None  # 非 Linux（无 /proc）或格式异常：不抛 500，交由前端显示不可用
     idle_a, idle_b = a[3] + a[4], b[3] + b[4]
     total_a, total_b = sum(a), sum(b)
     diff_total = total_b - total_a
@@ -95,17 +110,20 @@ def _disk(path: str = "/") -> dict:
             "used_gb": round(used / 1e9, 1),
             "percent": round(100 * used / total) if total else 0,
         }
-    except OSError:
+    except (OSError, AttributeError):  # Windows 无 os.statvfs
         return {"total_gb": 0, "used_gb": 0, "percent": 0}
 
 
 @router.get("/monitor/system")
-def system_resource() -> dict:
+def system_resource(_: AuthorizedDep) -> dict:
+    """主机资源快照；非 Linux 平台返回 supported=false 与零值，而非报错。"""
+    supported = _proc_available()
     return {
         "cpu_percent": _cpu_percent(),
         "cpu_cores": os.cpu_count() or 0,
         "memory": _memory(),
         "disk": _disk(),
-        "hostname": os.uname().nodename if hasattr(os, "uname") else "",
+        "hostname": os.uname().nodename if hasattr(os, "uname") else socket.gethostname(),
+        "supported": supported,
         "ts": time.strftime("%H:%M:%S"),
     }

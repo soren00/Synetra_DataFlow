@@ -2,9 +2,39 @@
 
 from __future__ import annotations
 
+import json
 from enum import Enum
+from typing import Any
 
-from pydantic import BaseModel, Field, field_serializer
+from pydantic import BaseModel, Field, field_serializer, field_validator
+
+# meta 允许嵌套一层参数结构（如 api 连接的 params/headers），但不能成为任意结构倾倒场
+META_MAX_BYTES = 8192
+
+
+def _is_scalar(value: Any) -> bool:
+    return value is None or isinstance(value, (str, int, float, bool))
+
+
+def _check_meta(meta: dict[str, Any]) -> dict[str, Any]:
+    """校验连接元数据：键为字符串，值为标量 / 一层字符串键值对 / 标量列表。"""
+    for key, value in meta.items():
+        if not isinstance(key, str):
+            raise ValueError("meta 的键必须是字符串")
+        if _is_scalar(value):
+            continue
+        if isinstance(value, dict):
+            if not all(isinstance(k, str) and _is_scalar(v) for k, v in value.items()):
+                raise ValueError(f"meta.{key} 只允许一层字符串键值对")
+            continue
+        if isinstance(value, list):
+            if not all(_is_scalar(v) for v in value):
+                raise ValueError(f"meta.{key} 的列表元素只允许标量")
+            continue
+        raise ValueError(f"meta.{key} 的类型不受支持")
+    if len(json.dumps(meta, ensure_ascii=False).encode("utf-8")) > META_MAX_BYTES:
+        raise ValueError(f"meta 序列化后不得超过 {META_MAX_BYTES} 字节")
+    return meta
 
 
 class ConnectionType(str, Enum):
@@ -42,9 +72,15 @@ class ConnectionCreate(BaseModel):
     name: str
     ctype: ConnectionType
     direction: ConnectionDirection = ConnectionDirection.SOURCE
-    meta: dict[str, str] = Field(default_factory=dict)
+    # 支持嵌套一层参数结构（api 连接的 params/headers），见 _check_meta
+    meta: dict[str, Any] = Field(default_factory=dict)
     secret: str | None = None
     created_by: str = "system"
+
+    @field_validator("meta")
+    @classmethod
+    def _validate_meta(cls, value: dict[str, Any]) -> dict[str, Any]:
+        return _check_meta(value)
 
 
 class ConnectionOut(BaseModel):
@@ -55,7 +91,7 @@ class ConnectionOut(BaseModel):
     name: str
     ctype: ConnectionType
     direction: ConnectionDirection
-    meta: dict[str, str]
+    meta: dict[str, Any]
     created_by: str
     created_at: str
     updated_at: str

@@ -119,6 +119,13 @@ def get_run(run_id: str, store: StoreDep) -> dict:
     return _require_run(store, run_id)
 
 
+@router.get("/runs/{run_id}/steps")
+def run_steps(run_id: str, store: StoreDep) -> dict:
+    """步级指标：每步输入/输出/拒绝行数、耗时与失败定位。"""
+    _require_run(store, run_id)
+    return {"run_id": run_id, "steps": store.list_run_steps(run_id)}
+
+
 # ---- 9.2 实时日志 ----
 
 @router.get("/runs/{run_id}/logs")

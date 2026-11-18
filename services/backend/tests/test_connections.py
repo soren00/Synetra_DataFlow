@@ -106,3 +106,30 @@ def test_no_plaintext_in_env_bootstrap(data_dir):
     os.environ.pop("SYNETRA_VAULT_KEY", None)
     v = SecretVault(data_dir)
     assert v.decrypt(v.encrypt("abc123")) == b"abc123"
+
+
+def test_meta_supports_nested_params_and_headers(data_dir):
+    """API 连接的 params/headers 是嵌套结构，meta 不应只允许 str 值（D-03）。"""
+    s = _store(data_dir)
+    created = s.create_connection(
+        ConnectionCreate(
+            project="p1", name="api-a", ctype=ConnectionType.API,
+            meta={"url": "https://api.example.com/orders", "method": "GET",
+                  "params": {"page": "1", "size": "20"},
+                  "headers": {"X-Trace": "e2e"}},
+            secret=None,
+        )
+    )
+    assert created.meta["params"] == {"page": "1", "size": "20"}
+    again = s.get_connection(created.conn_key)
+    assert again is not None and again.meta["headers"]["X-Trace"] == "e2e"
+
+
+def test_meta_rejects_oversized_or_unsupported_values():
+    """meta 允许嵌套但必须有界：超大结构与非 JSON 类型应被拒绝。"""
+    with pytest.raises(ValueError):
+        ConnectionCreate(project="p", name="c", ctype=ConnectionType.API,
+                         meta={"blob": "x" * 9000})
+    with pytest.raises(ValueError):
+        ConnectionCreate(project="p", name="c", ctype=ConnectionType.API,
+                         meta={"nested": {"a": {"b": "c"}}})

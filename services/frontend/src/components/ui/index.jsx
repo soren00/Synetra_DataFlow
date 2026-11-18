@@ -18,6 +18,7 @@ const PATHS = {
   check: <path d="m5 12 4 4L19 7" />,
   alert: <><path d="M12 4 2.5 19h19z" /><path d="M12 10v4" /><circle cx="12" cy="17" r="0.8" /></>,
   plus: <path d="M12 5v14M5 12h14" />,
+  x: <path d="M6 6l12 12M18 6 6 18" />,
   more: <path d="M5 12h.01M12 12h.01M19 12h.01" />,
   chevron: <path d="m9 6 6 6-6 6" />,
   chevronLeft: <path d="m15 6-6 6 6 6" />,
@@ -211,7 +212,7 @@ export function Avatar({ children, bg = "var(--accent-grad)" }) {
 export const shortId = (s, n = 8) => (!s ? "-" : (String(s).length > n ? `${String(s).slice(0, n)}…` : String(s)));
 export const shortTime = (s) => (!s ? "-" : String(s).slice(5, 16).replace("T", " "));
 
-export function Modal({ title, onClose, width = 560, children, footer }) {
+export function Modal({ title, onClose, width = 560, bodyStyle, children, footer }) {
   return (
     <div className="mac-modal" role="dialog" aria-modal="true" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
       <div className="mac-modal__panel" style={{ width, maxWidth: "94vw" }}>
@@ -219,7 +220,7 @@ export function Modal({ title, onClose, width = 560, children, footer }) {
           <h3 className="mac-card__title" style={{ margin: 0 }}>{title}</h3>
           <button className="mac-btn mac-btn--ghost" onClick={onClose} aria-label="关闭" style={{ padding: 6 }}><Icon name="more" /></button>
         </header>
-        <div className="mac-modal__body">{children}</div>
+        <div className="mac-modal__body" style={bodyStyle}>{children}</div>
         {footer && <footer className="mac-modal__foot">{footer}</footer>}
       </div>
     </div>

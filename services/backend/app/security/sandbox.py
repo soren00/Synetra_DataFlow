@@ -95,10 +95,25 @@ def build_worker_profile(store, task) -> WorkerProfile:
     if not allowed:
         profile.allowed_endpoints = [Endpoint(host="127.0.0.1"), Endpoint(host="localhost")]
         profile.notes.append("未声明外部端点，网络白名单默认仅放行本机")
-    if os.geteuid() != 0:
+    if not _is_root():
         profile.degraded = True
         profile.notes.append("非 root 运行：无法切换低权限用户，任务以当前身份执行（优雅降级）")
     return profile
+
+
+def _is_root() -> bool:
+    """当前进程是否为 root。
+
+    Windows 没有 POSIX 的 euid 概念（`os.geteuid` 不存在），因此按「非 root」处理：
+    调用方进入优雅降级分支——不切换低权限用户，也不会因缺特权阻塞任务落库。
+    """
+    geteuid = getattr(os, "geteuid", None)
+    if geteuid is None:
+        return False
+    try:
+        return geteuid() == 0
+    except OSError:  # pragma: no cover - 平台异常时按非 root 处理
+        return False
 
 
 def _sh(cmd: list[str]) -> tuple[int, str]:
@@ -115,7 +130,7 @@ def ensure_worker_user(profile: WorkerProfile) -> dict:
     root 下真实创建无特权用户并加入独立 worker group；非 root 返回 degraded 说明。
     返回 dict 描述执行安排；绝不因缺特权而抛异常阻塞任务落库。
     """
-    if os.geteuid() != 0:
+    if not _is_root():
         return {"created": False, "run_as_user": profile.run_as_user,
                 "note": "非 root 运行：沿用当前执行身份（优雅降级）"}
     group = profile.worker_group

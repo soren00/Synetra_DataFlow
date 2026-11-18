@@ -7,6 +7,8 @@ import tempfile
 
 from fastapi.testclient import TestClient
 
+from authhelpers import act_as
+
 from app.core.config import get_settings
 from app.models.task_config import TaskConfig
 from app.monitor import AlertEvaluator, Reconciler, sum_checksum
@@ -29,7 +31,7 @@ def _client():
 
     S(get_settings().data_dir).upsert_user("admin", "admin")
     client = TestClient(app)
-    client.headers["X-Synetra-User"] = "admin"
+    act_as(client, "admin")
     return client, tmp
 
 

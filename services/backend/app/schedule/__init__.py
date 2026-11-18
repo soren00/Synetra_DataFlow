@@ -141,29 +141,24 @@ class LocalScheduler:
 
     def _default_run(self, task_key: str) -> str:
         cfg = self.store.get_task(task_key)
+        from app.scripting.run_task import execute_task, pipeline_sizes
         from app.scripts import ScriptStore
 
         scripts = ScriptStore(get_settings().scripts_root or get_settings().data_dir)
         run_id = new_run_id()
         via = "schedule"
-        self.store.start_run(run_id, task_key, cfg.project, via, attempt=1)
+        batch_size, commit_size = pipeline_sizes(cfg)
+        self.store.start_run(run_id, task_key, cfg.project, via, attempt=1,
+                             exec_channel="real", batch_size=batch_size,
+                             commit_size=commit_size)
 
-        def execute():
-            if not scripts.has_current(task_key):
-                return {"status": "failed", "rows": 0,
-                        "error": "该任务尚无已确认脚本，请先生成/编写脚本"}
-            from app.scripting.executor import dry_run_script
-
-            res = dry_run_script(scripts.read_current(task_key), cfg.model_dump())
-            if res.ok:
-                self.store.append_run_log(run_id, f"本地调度执行完成，写入 {res.total_records()} 行", level="info")
-                return {"status": "success", "rows": res.total_records()}
-            self.store.append_run_log(run_id, f"脚本执行失败: {res.stderr.strip()}", level="error")
-            return {"status": "failed", "rows": 0, "error": res.stderr.strip()}
-
-        status = run_with_retry(self.store, run_id, execute,
-                                retry_times=get_settings().retry_times,
-                                retry_interval_s=get_settings().retry_interval_s)
+        # 与手动触发共用同一真实执行通道：定时任务必须真实写数，
+        # 不能以 dry-run 结果冒充成功（历史缺陷：定时成功却零写入）。
+        status = run_with_retry(
+            self.store, run_id,
+            lambda: execute_task(self.store, scripts, task_key, run_id),
+            retry_times=get_settings().retry_times,
+            retry_interval_s=get_settings().retry_interval_s)
         return status
 
     # ---- 调度扫描 ----

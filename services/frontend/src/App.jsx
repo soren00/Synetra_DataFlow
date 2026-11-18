@@ -1,7 +1,7 @@
-import { Fragment, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 import { useTheme } from "./theme/ThemeProvider";
 import { Icon } from "./components/ui";
-import { clearSession, logout, getSession } from "./api/client";
+import { logout, getSession, onUnauthorized } from "./api/client";
 import Login from "./pages/Login";
 import Overview from "./pages/Overview";
 import Connections from "./pages/Connections";
@@ -29,12 +29,46 @@ const NAV = [
   { key: "llm", label: "AI 管理", icon: "ai", section: "系统", page: <LLMConfig />, admin: true },
 ];
 
+/** 地址栏 hash 与页面标识互转（#/connections ↔ connections） */
+const navKeyFromHash = () => {
+  const raw = typeof window !== "undefined" ? window.location.hash : "";
+  const key = String(raw || "").replace(/^#\/?/, "").trim();
+  return key || "overview";
+};
+
 export default function App() {
   const { theme, toggle } = useTheme();
-  const [active, setActive] = useState("overview");
+  const [active, setActive] = useState(navKeyFromHash);
   const [session, setSession] = useState(() => (typeof window !== "undefined" ? getSession() : null));
+
+  // 票据失效（401）后立即回到登录页：仅清 localStorage 不会触发 React 重渲染
+  useEffect(() => { onUnauthorized(() => setSession(null)); }, []);
+
+  // 浏览器前进/后退
+  useEffect(() => {
+    const onHash = () => setActive(navKeyFromHash());
+    window.addEventListener("hashchange", onHash);
+    return () => window.removeEventListener("hashchange", onHash);
+  }, []);
+
   const visibleNav = NAV.filter((n) => !n.admin || session?.role === "admin");
   const page = visibleNav.find((n) => n.key === active) || visibleNav[0];
+
+  const navigate = (key) => {
+    setActive(key);
+    const target = `#/${key}`;
+    if (window.location.hash !== target) window.location.hash = target;
+  };
+
+  // 标识无效或当前角色不可见时回退到默认页，并把地址栏同步过去
+  useEffect(() => {
+    if (!session) return;
+    if (visibleNav.some((n) => n.key === active)) return;
+    const fallback = visibleNav[0].key;
+    setActive(fallback);
+    if (window.location.hash !== `#/${fallback}`) window.location.hash = `#/${fallback}`;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [session, active]);
 
   if (!session) return <Login onAuthed={setSession} />;
 
@@ -71,7 +105,7 @@ export default function App() {
                 )}
                 <button
                   className={`mac-nav-item${active === n.key ? " mac-nav-item--active" : ""}`}
-                  onClick={() => setActive(n.key)}
+                  onClick={() => navigate(n.key)}
                   role="tab"
                   aria-selected={active === n.key}
                 >

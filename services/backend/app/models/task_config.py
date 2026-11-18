@@ -10,6 +10,8 @@ from enum import Enum
 
 from pydantic import BaseModel, Field
 
+from app.models.pipeline import PipelineConfig
+
 
 class InjectMode(str, Enum):
     """写入方式。"""
@@ -56,6 +58,9 @@ class TaskConfig(BaseModel):
     mode: InjectMode = InjectMode.APPEND
     primary_keys: list[str] = Field(default_factory=list)
     fields: list[FieldRule] = Field(default_factory=list)
+    #: 多步清洗流水线（节点 + 连线）。为空时由 `fields` 等价编译为三节点流水线，
+    #: 存量任务因此零迁移即可走新执行引擎（见 app.etl_sdk.pipeline.compile）。
+    pipeline: PipelineConfig | None = None
     incremental: IncrementalConfig = Field(default_factory=IncrementalConfig)
     schedule: str = ""
     schedule_enabled: bool = True

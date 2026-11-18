@@ -130,7 +130,29 @@ CREATE TABLE IF NOT EXISTS run_record (
     finished_at TEXT,
     rows_total INTEGER NOT NULL DEFAULT 0,
     error TEXT,
-    attempt INTEGER NOT NULL DEFAULT 1
+    attempt INTEGER NOT NULL DEFAULT 1,
+    exec_channel TEXT NOT NULL DEFAULT 'real',
+    batch_size INTEGER NOT NULL DEFAULT 0,
+    commit_size INTEGER NOT NULL DEFAULT 0
+);
+CREATE TABLE IF NOT EXISTS run_step (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    run_id TEXT NOT NULL,
+    node_id TEXT NOT NULL,
+    node_type TEXT NOT NULL,
+    name TEXT NOT NULL DEFAULT '',
+    in_rows INTEGER NOT NULL DEFAULT 0,
+    out_rows INTEGER NOT NULL DEFAULT 0,
+    rejected_rows INTEGER NOT NULL DEFAULT 0,
+    elapsed_ms REAL NOT NULL DEFAULT 0,
+    status TEXT NOT NULL DEFAULT '',
+    error TEXT NOT NULL DEFAULT ''
+);
+CREATE INDEX IF NOT EXISTS idx_run_step_run ON run_step(run_id);
+CREATE TABLE IF NOT EXISTS task_watermark (
+    task_key TEXT PRIMARY KEY,
+    watermark_value TEXT NOT NULL DEFAULT '',
+    updated_at TEXT NOT NULL DEFAULT ''
 );
 CREATE TABLE IF NOT EXISTS run_log (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -319,7 +341,29 @@ CREATE TABLE IF NOT EXISTS run_record (
     finished_at VARCHAR(64) NULL,
     rows_total BIGINT NOT NULL DEFAULT 0,
     error LONGTEXT NULL,
-    attempt INT NOT NULL DEFAULT 1
+    attempt INT NOT NULL DEFAULT 1,
+    exec_channel VARCHAR(32) NOT NULL DEFAULT 'real',
+    batch_size INT NOT NULL DEFAULT 0,
+    commit_size INT NOT NULL DEFAULT 0
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+CREATE TABLE IF NOT EXISTS run_step (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    run_id VARCHAR(128) NOT NULL,
+    node_id VARCHAR(128) NOT NULL,
+    node_type VARCHAR(64) NOT NULL,
+    name VARCHAR(255) NOT NULL DEFAULT '',
+    in_rows BIGINT NOT NULL DEFAULT 0,
+    out_rows BIGINT NOT NULL DEFAULT 0,
+    rejected_rows BIGINT NOT NULL DEFAULT 0,
+    elapsed_ms DOUBLE NOT NULL DEFAULT 0,
+    status VARCHAR(32) NOT NULL DEFAULT '',
+    error LONGTEXT NULL,
+    KEY idx_run_step_run (run_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+CREATE TABLE IF NOT EXISTS task_watermark (
+    task_key VARCHAR(128) PRIMARY KEY,
+    watermark_value VARCHAR(512) NOT NULL DEFAULT '',
+    updated_at VARCHAR(64) NOT NULL DEFAULT ''
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 CREATE TABLE IF NOT EXISTS run_log (
     id INT AUTO_INCREMENT PRIMARY KEY,
@@ -465,10 +509,30 @@ class Store:
         # 避免每次请求构造 Store 都重复执行 DDL（MySQL 下尤甚）。
         target = self.db.dsn or f"sqlite:{self.db_path}"
         with _INIT_LOCK:
-            if target in _INITIALIZED:
+            if target in _INITIALIZED and self._sqlite_schema_intact():
                 return
             self._ensure_schema()
             _INITIALIZED.add(target)
+
+    def _sqlite_schema_intact(self) -> bool:
+        """进程级初始化标记是否仍然有效。
+
+        SQLite 库文件可能被删除或重建（本地开发、测试用临时目录），此时目标路径不变
+        但表已不存在；仅凭「路径 + 进程内标记」会跳过建表并导致 `no such table`。
+        MySQL 不做此校验，避免每个请求多一次往返。
+        """
+        if self.db.is_mysql:
+            return True
+        try:
+            if not self.db_path.exists():
+                return False
+            with self._conn() as c:
+                row = c.execute(
+                    "SELECT name FROM sqlite_master WHERE type='table' AND name='user_account'"
+                ).fetchone()
+            return bool(row)
+        except Exception:  # noqa: BLE001 - 校验失败按「需要重新建表」处理
+            return False
 
     def _ensure_schema(self) -> None:
         if self.db.is_mysql:
@@ -485,6 +549,16 @@ class Store:
                 ("updated_at", "ALTER TABLE user_account ADD COLUMN updated_at VARCHAR(64) NOT NULL DEFAULT ''" if self.db.is_mysql else "ALTER TABLE user_account ADD COLUMN updated_at TEXT NOT NULL DEFAULT ''"),
             ):
                 if col in existing:
+                    continue
+                c.execute(col_sql)
+            # 存量库迁移：run_record 补齐执行通道与批次参数（流水线执行语义）
+            existing_run = self._existing_columns(c, "run_record")
+            for col, col_sql in (
+                ("exec_channel", "ALTER TABLE run_record ADD COLUMN exec_channel VARCHAR(32) NOT NULL DEFAULT 'real'" if self.db.is_mysql else "ALTER TABLE run_record ADD COLUMN exec_channel TEXT NOT NULL DEFAULT 'real'"),
+                ("batch_size", "ALTER TABLE run_record ADD COLUMN batch_size INT NOT NULL DEFAULT 0" if self.db.is_mysql else "ALTER TABLE run_record ADD COLUMN batch_size INTEGER NOT NULL DEFAULT 0"),
+                ("commit_size", "ALTER TABLE run_record ADD COLUMN commit_size INT NOT NULL DEFAULT 0" if self.db.is_mysql else "ALTER TABLE run_record ADD COLUMN commit_size INTEGER NOT NULL DEFAULT 0"),
+            ):
+                if col in existing_run:
                     continue
                 c.execute(col_sql)
 
@@ -615,13 +689,22 @@ class Store:
                 (_utcnow(), actor, project, action, json.dumps(detail, ensure_ascii=False)),
             )
 
-    def list_events(self, project: str | None = None, limit: int = 100) -> list[dict]:
+    def list_events(self, project: str | None = None, limit: int = 100,
+                    action: str | None = None) -> list[dict]:
+        """审计日志查询（倒序）；支持按项目与操作类型过滤。"""
         sql = "SELECT ts, actor, project, action, detail_json FROM audit_log"
+        where: list[str] = []
         args: list = []
         if project:
-            sql += " WHERE project=?"
+            where.append("project=?")
             args.append(project)
-        sql += f" ORDER BY id DESC LIMIT {int(limit)}"
+        if action:
+            where.append("action=?")
+            args.append(action)
+        if where:
+            sql += " WHERE " + " AND ".join(where)
+        sql += " ORDER BY id DESC LIMIT ?"
+        args.append(max(1, min(int(limit), 1000)))
         with self._conn() as c:
             rows = c.execute(sql, args).fetchall()
         return [dict(r) for r in rows]
@@ -1245,12 +1328,15 @@ class Store:
     # ---- 运行历史与日志（任务 8.x / 9.1 / 9.2） ----
 
     def start_run(self, run_id: str, task_key: str, project: str, via: str,
-                  attempt: int = 1) -> None:
+                  attempt: int = 1, *, exec_channel: str = "real",
+                  batch_size: int = 0, commit_size: int = 0) -> None:
         with self._conn() as c:
             c.execute(
-                "INSERT INTO run_record(run_id, task_key, project, status, trigger_via, started_at, attempt)"
-                " VALUES (?,?,?,?,?,?,?)",
-                (run_id, task_key, project, "running", via, _utcnow(), attempt))
+                "INSERT INTO run_record(run_id, task_key, project, status, trigger_via,"
+                " started_at, attempt, exec_channel, batch_size, commit_size)"
+                " VALUES (?,?,?,?,?,?,?,?,?,?)",
+                (run_id, task_key, project, "running", via, _utcnow(), attempt,
+                 exec_channel, int(batch_size), int(commit_size)))
 
     def finish_run(self, run_id: str, *, status: str, rows_total: int = 0,
                    error: str | None = None) -> None:
@@ -1259,6 +1345,50 @@ class Store:
                 "UPDATE run_record SET status=?, finished_at=?, rows_total=?, error=?"
                 " WHERE run_id=?",
                 (status, _utcnow(), rows_total, error, run_id))
+
+    # ---- 增量水位（成功后推进，失败不推进） ----
+
+    def get_watermark(self, task_key: str) -> str:
+        with self._conn() as c:
+            row = c.execute(
+                "SELECT watermark_value FROM task_watermark WHERE task_key=?", (task_key,)
+            ).fetchone()
+        return str(row["watermark_value"] or "") if row else ""
+
+    def set_watermark(self, task_key: str, value: str) -> None:
+        with self._conn() as c:
+            c.execute(
+                "INSERT INTO task_watermark(task_key, watermark_value, updated_at)"
+                " VALUES (?,?,?) ON CONFLICT(task_key) DO UPDATE SET"
+                " watermark_value=excluded.watermark_value, updated_at=excluded.updated_at",
+                (task_key, str(value or ""), _utcnow()))
+
+    # ---- 步级指标（流水线每步 in/out/rejected/耗时） ----
+
+    def add_run_steps(self, run_id: str, steps: list[dict]) -> int:
+        if not steps:
+            return 0
+        with self._conn() as c:
+            for s in steps:
+                c.execute(
+                    "INSERT INTO run_step(run_id, node_id, node_type, name, in_rows,"
+                    " out_rows, rejected_rows, elapsed_ms, status, error)"
+                    " VALUES (?,?,?,?,?,?,?,?,?,?)",
+                    (run_id, str(s.get("node_id", "")), str(s.get("type", "")),
+                     str(s.get("name", "")), int(s.get("in_rows", 0) or 0),
+                     int(s.get("out_rows", 0) or 0), int(s.get("rejected_rows", 0) or 0),
+                     float(s.get("elapsed_ms", 0) or 0), str(s.get("status", "")),
+                     str(s.get("error", "") or "")))
+        return len(steps)
+
+    def list_run_steps(self, run_id: str) -> list[dict]:
+        with self._conn() as c:
+            c.row_factory = sqlite3.Row
+            rows = c.execute(
+                "SELECT node_id, node_type, name, in_rows, out_rows, rejected_rows,"
+                " elapsed_ms, status, error FROM run_step WHERE run_id=? ORDER BY id",
+                (run_id,)).fetchall()
+        return [dict(r) for r in rows]
 
     @staticmethod
     def _run_filters(project: str | None = None, task_key: str | None = None,
@@ -1282,7 +1412,8 @@ class Store:
                   status: str | None = None) -> list[dict]:
         where, args = self._run_filters(project, task_key, status)
         sql = ("SELECT run_id, task_key, project, status, trigger_via, started_at, finished_at,"
-               f" rows_total, error, attempt FROM run_record{where}"
+               f" rows_total, error, attempt, exec_channel, batch_size, commit_size"
+               f" FROM run_record{where}"
                " ORDER BY id DESC LIMIT ? OFFSET ?")
         with self._conn() as c:
             c.row_factory = sqlite3.Row

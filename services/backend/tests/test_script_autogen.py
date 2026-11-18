@@ -11,6 +11,8 @@ import tempfile
 
 from fastapi.testclient import TestClient
 
+from authhelpers import act_as
+
 from app.core.config import get_settings
 from app.models.task_config import (
     FieldRule,
@@ -89,7 +91,7 @@ def test_save_task_auto_writes_current_script():
 
     Store(get_settings().data_dir).upsert_user("admin", "admin")
     client = TestClient(app)
-    client.headers["X-Synetra-User"] = "admin"
+    act_as(client, "admin")
     try:
         r = client.post("/api/tasks",
                         json={"project": "proj-autogen", "name": "sync-orders",

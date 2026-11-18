@@ -23,6 +23,16 @@ export default function Schedules() {
   const [cronPick, setCronPick] = useState("");
   const [cronDraft, setCronDraft] = useState("");
 
+  // 新建调度
+  const [showNew, setShowNew] = useState(false);
+  const [projects, setProjects] = useState([]);
+  const [newProject, setNewProject] = useState("");
+  const [tasks, setTasks] = useState([]);
+  const [newTask, setNewTask] = useState("");
+  const [newCronPick, setNewCronPick] = useState("0 2 * * *");
+  const [newCronDraft, setNewCronDraft] = useState("0 2 * * *");
+  const [creating, setCreating] = useState(false);
+
   const load = () => {
     api.get("/schedules")
       .then((rows) => { setItems(rows || []); setError(null); })
@@ -60,13 +70,50 @@ export default function Schedules() {
     finally { setBusyKey(null); }
   };
 
+  const loadTasks = async (project) => {
+    if (!project) { setTasks([]); setNewTask(""); return; }
+    try {
+      const rows = await api.get("/tasks", { project });
+      setTasks(rows || []);
+      setNewTask((cur) => (cur && rows.some((t) => t.task_key === cur) ? cur : ""));
+    } catch { setTasks([]); setNewTask(""); }
+  };
+
+  const openNew = async () => {
+    setMsg(null); setShowNew(true);
+    try {
+      const ps = await api.get("/projects");
+      setProjects(ps || []);
+      const project = newProject || ps?.[0]?.name || "";
+      setNewProject(project);
+      await loadTasks(project);
+    } catch (e) { setMsg({ tone: "danger", text: `项目列表不可达：${e.message}` }); }
+  };
+
+  const createSchedule = async () => {
+    const cron = newCronDraft.trim();
+    if (!newTask) { setMsg({ tone: "danger", text: "请选择要配置定时的任务" }); return; }
+    if (!validCron(cron) || !cron) {
+      setMsg({ tone: "danger", text: "cron 需为 5 字段（分 时 日 月 周）" });
+      return;
+    }
+    setCreating(true); setMsg(null);
+    try {
+      await api.patch(`/schedules/${newTask}`, { schedule: cron });
+      setMsg({ tone: "success", text: "调度已创建" });
+      setShowNew(false);
+      load();
+    } catch (e) { setMsg({ tone: "danger", text: `创建失败：${e.message}` }); }
+    finally { setCreating(false); }
+  };
+
   return (
     <div className="mac-fade" style={{ display: "flex", flexDirection: "column", gap: "var(--sp-3)" }}>
       <div className="mac-row mac-end" style={{ justifyContent: "space-between" }}>
         <div><h1 className="mac-h1">定时任务</h1><div className="mac-muted">展示/启停各任务的 cron 计划与上次、下次运行时间</div></div>
         <Row>
           <Button variant="ghost" icon="refresh" onClick={load}>刷新</Button>
-          <Button variant="primary" icon="plus" onClick={() => { setError("请在「ETL 任务」中新建并配置定时。"); }}>新建</Button>
+          <Button variant="primary" icon="plus" onClick={openNew}>新建</Button>
         </Row>
       </div>
 
@@ -129,6 +176,58 @@ export default function Schedules() {
             <div className="mac-row mac-end" style={{ gap: 8, justifyContent: "flex-end" }}>
               <Button variant="ghost" onClick={() => setEditing(null)} disabled={busyKey === editing.task_key}>取消</Button>
               <Button variant="primary" icon="check" onClick={applyCron} disabled={busyKey === editing.task_key}>{busyKey === editing.task_key ? "处理中…" : "确定"}</Button>
+            </div>
+          </footer>
+        </Modal>
+      )}
+
+      {showNew && (
+        <Modal title="新建调度" onClose={() => setShowNew(false)}>
+          <div style={{ display: "flex", flexDirection: "column", gap: "var(--sp-3)" }}>
+            <div>
+              <span className="mac-label">项目</span>
+              <Select value={newProject}
+                onChange={(e) => { setNewProject(e.target.value); loadTasks(e.target.value); }}>
+                {projects.length === 0 && <option value="">暂无项目</option>}
+                {projects.map((p) => <option key={p.name} value={p.name}>{p.name}</option>)}
+              </Select>
+            </div>
+            <div>
+              <span className="mac-label">任务</span>
+              <Select value={newTask} onChange={(e) => setNewTask(e.target.value)}>
+                <option value="">{tasks.length ? "请选择任务" : "该项目下暂无任务"}</option>
+                {tasks.map((t) => (
+                  <option key={t.task_key} value={t.task_key}>
+                    {t.name}{t.schedule ? "（已有调度，保存将覆盖）" : ""}
+                  </option>
+                ))}
+              </Select>
+            </div>
+            <div>
+              <span className="mac-label">常用频率</span>
+              <Select value={newCronPick}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  setNewCronPick(v);
+                  if (v !== "custom") setNewCronDraft(v);
+                }}>
+                {CRON_PRESETS.filter(([v]) => v).map(([v, label]) => <option key={v} value={v}>{label}</option>)}
+              </Select>
+            </div>
+            <div>
+              <span className="mac-label">cron（分 时 日 月 周）</span>
+              <Input value={newCronDraft} onChange={(e) => setNewCronDraft(e.target.value)} placeholder="0 2 * * *" />
+            </div>
+            {tasks.length === 0 && (
+              <div className="mac-muted">该项目暂无任务，请先在「ETL 任务」中创建任务后再配置定时。</div>
+            )}
+          </div>
+          <footer className="mac-modal__foot">
+            <div className="mac-row mac-end" style={{ gap: 8, justifyContent: "flex-end" }}>
+              <Button variant="ghost" onClick={() => setShowNew(false)} disabled={creating}>取消</Button>
+              <Button variant="primary" icon="check" onClick={createSchedule} disabled={creating || !newTask}>
+                {creating ? "创建中…" : "创建调度"}
+              </Button>
             </div>
           </footer>
         </Modal>

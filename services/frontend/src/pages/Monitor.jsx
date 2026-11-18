@@ -66,14 +66,23 @@ export default function Monitor() {
 
       {error && <div className="mac-callout mac-callout--warning">部分监控数据不可达（{error}）。</div>}
 
-      <Card title="系统资源守护" sub={sys ? `主机 ${sys.hostname || ""} · ${sys.ts} · ${sys.cpu_cores} 核` : "读取中…"}
+      <Card title="系统资源守护"
+        sub={sys
+          ? (sys.supported === false
+            ? `主机 ${sys.hostname || ""} · 该平台不支持资源采集`
+            : `主机 ${sys.hostname || ""} · ${sys.ts} · ${sys.cpu_cores} 核`)
+          : "读取中…"}
         actions={<Button variant="ghost" icon="refresh" onClick={loadSys}>刷新</Button>}>
-        {sys ? (
+        {sys?.supported === false ? (
+          <div className="mac-muted" data-testid="sys-unsupported">
+            当前平台不支持主机资源采集（仅 Linux 实测），CPU/内存/磁盘数值不可用；其余监控区域不受影响。
+          </div>
+        ) : sys ? (
           <div className="mac-detail-row__inner">
             <div className="mac-detail__item">
               <span className="mac-detail__label">CPU 使用率</span>
-              <Row><Bar value={sys.cpu_percent} tone={sys.cpu_percent > 85 ? "danger" : "info"} />
-                <span className="num" style={{ width: 64, textAlign: "right" }}>{sys.cpu_percent}%</span></Row>
+              <Row><Bar value={sys.cpu_percent || 0} tone={(sys.cpu_percent || 0) > 85 ? "danger" : "info"} />
+                <span className="num" style={{ width: 64, textAlign: "right" }}>{sys.cpu_percent ?? "-"}%</span></Row>
             </div>
             <div className="mac-detail__item">
               <span className="mac-detail__label">内存占用</span>

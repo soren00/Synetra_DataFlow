@@ -51,8 +51,8 @@ export default function Login({ onAuthed }) {
           </Button>
 
           <div className="mac-muted" style={{ fontSize: 12, marginTop: 14, lineHeight: 1.6 }}>
-            试用账号：admin / admin（管理员）、dev / dev（开发者）。
-            登录后会话按 <span className="mac-chip">X-Synetra-User</span> 注入，角色决定读写权限。
+            初始账号：admin / admin（管理员，首次登录后请尽快改密）。
+            其余账号由管理员在「权限凭据」页创建，角色决定读写权限。
           </div>
         </form>
       </div>

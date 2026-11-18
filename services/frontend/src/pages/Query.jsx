@@ -215,8 +215,8 @@ export default function Query() {
             <Select value={connKey} onChange={(e) => switchConn(e.target.value)}>
               {available.length === 0 && <option value="">（无可用连接）</option>}
               {available.map((c) => (
-                <option key={ckey(c)} value={ckey(c)} title={ckey(c)}>
-                  {c.name} ({String(ckey(c)).slice(0, 8)}…)
+                <option key={ckey(c)} value={ckey(c)}>
+                  {c.name}
                 </option>
               ))}
             </Select>

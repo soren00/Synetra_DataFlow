@@ -7,6 +7,8 @@ import tempfile
 
 from fastapi.testclient import TestClient
 
+from authhelpers import act_as
+
 from app.mdm.quality import FieldDef, MasterModel, validate_record
 
 
@@ -22,7 +24,7 @@ def _client(role: str = "admin"):
     store = Store(get_settings().data_dir)
     store.upsert_user("admin", role)
     client = TestClient(app)
-    client.headers["X-Synetra-User"] = "admin"
+    act_as(client, "admin")
     return client, tmp, store
 
 

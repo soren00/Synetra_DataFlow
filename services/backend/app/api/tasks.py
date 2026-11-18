@@ -17,6 +17,7 @@ from pydantic import BaseModel, Field
 
 from app.auth import require_role
 from app.core.config import get_settings
+from app.etl_sdk.pipeline import sync_task_pipeline, validate_pipeline
 from app.llm.rag import skill_fingerprints
 from app.llm.redact import redact_object, redact_text
 from app.metadata import Catalog
@@ -124,7 +125,10 @@ def save_task(req: TaskSaveRequest, auth: DeveloperDep, store: StoreDep,
     cfg.project = req.project
     cfg.name = req.name
     # 校验转换规则（含表达式白名单）；失败则不保存，但先留下失败记录（AI 路径）
-    violations = validate_rules(cfg.fields)
+    violations = list(validate_rules(cfg.fields))
+    # 流水线：缺省时由字段规则等价编译，再校验图合法性与步骤配置
+    pipeline = sync_task_pipeline(cfg)
+    violations.extend(validate_pipeline(pipeline))
     if violations:
         detail = "; ".join(violations)
         _record_ai_creation(store, req.ai_trace, actor=auth.username, project=req.project,

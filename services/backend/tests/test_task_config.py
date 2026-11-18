@@ -7,6 +7,8 @@ import tempfile
 
 from fastapi.testclient import TestClient
 
+from authhelpers import act_as
+
 from app.expr.whitelist import validate_expression
 from app.models.task_config import FieldRule, TransformKind
 from app.transform import apply_rules, validate_rules
@@ -25,7 +27,7 @@ def _client():
 
     Store(get_settings().data_dir).upsert_user("admin", "admin")
     client = TestClient(app)
-    client.headers["X-Synetra-User"] = "admin"
+    act_as(client, "admin")
     return client, tmp
 
 

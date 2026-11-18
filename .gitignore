@@ -31,3 +31,8 @@ services/backend/data/
 *.db-shm
 *.db-wal
 *.key
+
+# E2E 测试产物与运行态（Playwright，重新执行即可再生成）
+reports/
+services/backend/data-e2e/
+services/frontend/e2e/.state/

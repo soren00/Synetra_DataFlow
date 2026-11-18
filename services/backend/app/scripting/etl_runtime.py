@@ -12,6 +12,7 @@ import os
 from typing import ClassVar
 
 from app.core.config import get_settings
+from app.etl_sdk.pipeline import PipelineRunError, run_pipeline
 from app.etl_sdk.relational import get_connector
 from app.store import Store
 
@@ -126,7 +127,14 @@ class _ApiWriter(_BaseWriter):
 def new_module() -> dict:
     """构造可注入被审计脚本命名空间的 etl_sdk 模块 dict。"""
     writers._reset()
-    return {"readers": readers, "transforms": transforms, "writers": writers}
+    return {
+        "readers": readers,
+        "transforms": transforms,
+        "writers": writers,
+        # 流水线解释执行入口：生成脚本为薄壳，多步清洗逻辑由引擎统一执行
+        "run_pipeline": run_pipeline,
+        "PipelineRunError": PipelineRunError,
+    }
 
 
 def _real_load(conn_key: str, table: str, mode: str,

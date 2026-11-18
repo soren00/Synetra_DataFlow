@@ -25,6 +25,19 @@ export default function Security() {
   const [msg, setMsg] = useState(null);
   const [confirmUser, setConfirmUser] = useState(null);
 
+  // API 凭据
+  const [projects, setProjects] = useState([]);
+  const [credProject, setCredProject] = useState("");
+  const [creds, setCreds] = useState([]);
+  const [credLabel, setCredLabel] = useState("ci-trigger");
+  const [issuedToken, setIssuedToken] = useState(null);
+
+  // 审计日志
+  const [auditProject, setAuditProject] = useState("");
+  const [auditAction, setAuditAction] = useState("");
+  const [auditRows, setAuditRows] = useState([]);
+  const [auditError, setAuditError] = useState(null);
+
   const session = getSession();
   const isAdmin = session?.role === "admin";
 
@@ -35,6 +48,39 @@ export default function Security() {
   }, [q, roleFilter]);
 
   useEffect(() => { load(); }, [load]);
+
+  const loadCreds = useCallback((project) => {
+    if (!project) { setCreds([]); return Promise.resolve(); }
+    return api.get(`/projects/${encodeURIComponent(project)}/credentials`)
+      .then((rows) => { setCreds(rows); setError(null); })
+      .catch((e) => setMsg({ tone: "danger", text: `凭据列表不可达：${e.message}` }));
+  }, []);
+
+  const loadAudit = useCallback(() => {
+    setAuditError(null);
+    api.get("/audit/events", { project: auditProject, action: auditAction, limit: 50 })
+      .then((rows) => setAuditRows(rows))
+      .catch((e) => { setAuditRows([]); setAuditError(e.message); });
+  }, [auditProject, auditAction]);
+
+  useEffect(() => {
+    api.get("/projects")
+      .then((ps) => {
+        setProjects(ps);
+        setCredProject((cur) => cur || ps[0]?.name || "");
+      })
+      .catch(() => setProjects([]));
+  }, []);
+
+  useEffect(() => {
+    if (tab === "tokens") loadCreds(credProject);
+  }, [tab, credProject, loadCreds]);
+
+  useEffect(() => {
+    // 仅切到审计 Tab 时拉一次；后续按「查询」按钮触发
+    if (tab === "audit" && isAdmin) loadAudit();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tab, isAdmin]);
 
   const createUser = async () => {
     setBusy(true); setMsg(null);
@@ -75,6 +121,26 @@ export default function Security() {
     setBusy(true); setMsg(null);
     try { await api.del(`/users/${u.username}`); setConfirmUser(null); load(); }
     catch (e) { setMsg({ tone: "danger", text: `删除失败：${e.message}` }); setConfirmUser(null); }
+    finally { setBusy(false); }
+  };
+
+  const issueCred = async () => {
+    setBusy(true); setMsg(null); setIssuedToken(null);
+    try {
+      const r = await api.post(`/projects/${encodeURIComponent(credProject)}/credentials`,
+        { label: credLabel });
+      setIssuedToken(r.token);
+      await loadCreds(credProject);
+    } catch (e) { setMsg({ tone: "danger", text: `签发失败：${e.message}` }); }
+    finally { setBusy(false); }
+  };
+
+  const revokeCred = async (credId) => {
+    setBusy(true); setMsg(null);
+    try {
+      await api.post(`/projects/${encodeURIComponent(credProject)}/credentials/${credId}/revoke`);
+      await loadCreds(credProject);
+    } catch (e) { setMsg({ tone: "danger", text: `吊销失败：${e.message}` }); }
     finally { setBusy(false); }
   };
 
@@ -131,15 +197,82 @@ export default function Security() {
         )}
 
         {tab === "tokens" && (
-          <div style={{ color: "var(--text-secondary)", fontSize: 13 }}>
-            API 凭据通过 <span className="mac-chip">POST /api/projects/{"{project}"}/credentials</span> 签发，明文仅在签发时展示一次，可随时吊销，按项目隔离。仅对触发接口 /api/trigger/{"{task_key}"} 授权。
-          </div>
+          <>
+            <Row className="mac-end" style={{ gap: 8, alignItems: "flex-end" }}>
+              <div className="mac-field" style={{ width: 200 }}>
+                <span className="mac-label">项目</span>
+                <Select value={credProject} onChange={(e) => { setCredProject(e.target.value); setIssuedToken(null); }}>
+                  {projects.length === 0 && <option value="">暂无项目</option>}
+                  {projects.map((p) => <option key={p.name} value={p.name}>{p.name}</option>)}
+                </Select>
+              </div>
+              <div className="mac-field" style={{ flex: 1 }}>
+                <span className="mac-label">凭据名称</span>
+                <Input value={credLabel} onChange={(e) => setCredLabel(e.target.value)} placeholder="如 ci-trigger" />
+              </div>
+              <Button variant="primary" icon="plus" onClick={issueCred}
+                disabled={busy || !credProject}>签发凭据</Button>
+            </Row>
+
+            {issuedToken && (
+              <Callout tone="warning">
+                <div>凭据明文仅展示这一次，请立即保存：</div>
+                <div className="num" style={{ wordBreak: "break-all", marginTop: 4 }}>{issuedToken}</div>
+              </Callout>
+            )}
+
+            <Table head={["凭据", "项目", "状态", "创建时间", "操作"]}>
+              {creds.length === 0
+                ? <tr><td colSpan={5} style={{ textAlign: "center", color: "var(--text-tertiary)" }}>该项目暂无凭据</td></tr>
+                : creds.map((c) => (
+                    <tr key={c.cred_id} style={{ opacity: c.revoked ? 0.55 : 1 }}>
+                      <td><b>{c.label || c.cred_id}</b><div className="mac-muted num" style={{ fontSize: 12 }}>{c.cred_id}</div></td>
+                      <td>{c.project}</td>
+                      <td><Badge dot tone={c.revoked ? "danger" : "success"} label={c.revoked ? "已吊销" : "有效"} /></td>
+                      <td className="num">{String(c.created_at || "").slice(0, 19).replace("T", " ")}</td>
+                      <td>
+                        {c.revoked
+                          ? <span className="mac-muted" style={{ fontSize: 12 }}>-</span>
+                          : <Button variant="ghost" onClick={() => revokeCred(c.cred_id)} disabled={busy} style={{ padding: 5 }}>吊销</Button>}
+                      </td>
+                    </tr>
+                  ))}
+            </Table>
+            <div className="mac-muted" style={{ fontSize: 12, marginTop: 10 }}>
+              凭据仅能触发所属项目的任务（/api/trigger/{"{task_key}"}），明文不落库、不可再次查看。
+            </div>
+          </>
         )}
-        {tab === "audit" && (
-          <div style={{ color: "var(--text-secondary)", fontSize: 13 }}>
-            配置变更 task_save / 凭据签发 credential_issue / 任务触发 external_api / 对账 reconcile 等操作均已写入审计日志。列表接口按需暴露。
-          </div>
-        )}
+
+        {tab === "audit" && (isAdmin ? (
+          <>
+            <Row className="mac-end" style={{ gap: 8 }}>
+              <Input value={auditProject} onChange={(e) => setAuditProject(e.target.value)}
+                placeholder="项目（可选）" style={{ width: 180 }} />
+              <Input value={auditAction} onChange={(e) => setAuditAction(e.target.value)}
+                placeholder="操作（如 task_save）" style={{ width: 200 }} />
+              <Button variant="ghost" icon="refresh" onClick={loadAudit}>查询</Button>
+            </Row>
+            {auditError && <Callout tone="danger">审计日志不可达：{auditError}</Callout>}
+            <Table head={["时间", "操作者", "项目", "操作", "明细"]}>
+              {auditRows.length === 0
+                ? <tr><td colSpan={5} style={{ textAlign: "center", color: "var(--text-tertiary)" }}>暂无审计记录</td></tr>
+                : auditRows.map((r, i) => (
+                    <tr key={`${r.ts}-${i}`}>
+                      <td className="num">{String(r.ts || "").slice(0, 19).replace("T", " ")}</td>
+                      <td>{r.actor || "-"}</td>
+                      <td>{r.project || "-"}</td>
+                      <td><Badge tone="neutral" label={r.action || "-"} dot={false} /></td>
+                      <td className="mac-muted" style={{ fontSize: 12, maxWidth: 320, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                        {JSON.stringify(r.detail || {})}
+                      </td>
+                    </tr>
+                  ))}
+            </Table>
+          </>
+        ) : (
+          <Callout tone="warning">审计日志仅管理员可见。</Callout>
+        ))}
       </Card>
       {msg && <Callout tone={msg.tone}>{msg.text}</Callout>}
 

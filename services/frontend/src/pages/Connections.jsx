@@ -61,8 +61,8 @@ export default function Connections() {
 
   const setMeta = (k, v) => setForm((f) => ({ ...f, meta: { ...f.meta, [k]: v } }));
 
-  const submit = async () => {
-    setBusy(true); setMsg(null);
+  // 保存与「测试连接」共用同一份 meta 组装逻辑，避免试连漏掉 Params/Headers
+  const buildMeta = () => {
     let meta = { ...form.meta };
     if (form.ctype === "api") {
       const p = toDict(apiParams);
@@ -72,6 +72,12 @@ export default function Connections() {
       if (h && Object.keys(h).length) meta = { ...meta, headers: h };
       else delete meta.headers;
     }
+    return meta;
+  };
+
+  const submit = async () => {
+    setBusy(true); setMsg(null);
+    const meta = buildMeta();
     const body = { project: form.project, name: form.name, ctype: form.ctype, direction: "both", meta, secret: form.secret || null };
     try {
       if (edit) await api.put(`/connections/${edit}`, body);
@@ -101,7 +107,7 @@ export default function Connections() {
   const testForm = async () => {
     setTesting(true); setModalTest(null);
     try {
-      const r = await api.post("/connections/test", { project: form.project, name: form.name, ctype: form.ctype, direction: form.direction, meta: form.meta, secret: form.secret || null });
+      const r = await api.post("/connections/test", { project: form.project, name: form.name, ctype: form.ctype, direction: form.direction, meta: buildMeta(), secret: form.secret || null });
       setModalTest(r);
     } catch (e) { setModalTest({ ok: false, detail: e.message }); }
     finally { setTesting(false); }

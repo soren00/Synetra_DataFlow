@@ -144,10 +144,42 @@ def _parse_full_task(text: str, project: str | None) -> dict:
         "first_run_policy": inc.get("first_run_policy") or "all",
     }
     raw.setdefault("fields", [])
+    _normalize_pipeline(raw)
     try:
         return TaskConfig.model_validate(raw).model_dump()
     except ValidationError as e:
         raise ValueError(f"输出不符合 TaskConfig 契约: {e}") from e
+
+
+def _normalize_pipeline(raw: dict) -> None:
+    """校验并规范化 LLM 产出的 `pipeline`（节点 + 连线）。
+
+    草稿可以只给字段规则（单源单目标，后续按三节点等价编译），也可以在涉及
+    多源合并 / 多步清洗时直接给出流水线。这里只做结构合法性与端点完整性校验，
+    连接存在性在 `_validate_connections` 中校验（需要 store）。
+    """
+    pipe_raw = raw.get("pipeline")
+    if not pipe_raw:
+        raw.pop("pipeline", None)
+        return
+    from app.models.pipeline import PipelineConfig
+
+    try:
+        pipe = PipelineConfig.model_validate(pipe_raw)
+    except ValidationError as e:
+        raise ValueError(f"流水线结构非法: {e}") from e
+    problems = pipe.validate_structure()
+    if problems:
+        raise ValueError("流水线结构非法: " + "; ".join(problems))
+    try:
+        pipe.topo_order()
+    except Exception as e:  # noqa: BLE001 - 环路等图错误回喂给修复轮
+        raise ValueError(f"流水线图非法: {e}") from e
+    if not pipe.source_nodes():
+        raise ValueError("流水线缺少源节点")
+    if not pipe.target_nodes():
+        raise ValueError("流水线缺少目标节点")
+    raw["pipeline"] = pipe.model_dump(mode="json")
 
 
 # ---- 审计（决策 7） ----
@@ -311,12 +343,49 @@ def _target_warnings(store: Store, target_conn_key: str, target_object: str,
     return warnings
 
 
+def _backfill_from_pipeline(draft: dict) -> None:
+    """流水线草稿可省略顶层 source/target 连接：用首尾节点补齐，保持旧表单可用。"""
+    pipe_raw = draft.get("pipeline")
+    if not pipe_raw:
+        return
+    nodes = pipe_raw.get("nodes") or []
+    src = next((n for n in nodes if str(n.get("type", "")).startswith("source_")), None)
+    tgt = next((n for n in nodes if str(n.get("type", "")).startswith("target_")), None)
+    if src:
+        draft["source_conn_key"] = draft.get("source_conn_key") or \
+            (src.get("config") or {}).get("conn_key", "")
+        draft["source_object"] = draft.get("source_object") or \
+            (src.get("config") or {}).get("object", "")
+    if tgt:
+        cfg = tgt.get("config") or {}
+        draft["target_conn_key"] = draft.get("target_conn_key") or cfg.get("conn_key", "")
+        draft["target_object"] = draft.get("target_object") or cfg.get("object", "")
+        if cfg.get("mode") and cfg.get("mode") != draft.get("mode"):
+            draft.setdefault("mode", cfg.get("mode"))
+        if cfg.get("primary_keys") and not draft.get("primary_keys"):
+            draft["primary_keys"] = cfg["primary_keys"]
+
+
 def _validate_connections(store: Store, draft: dict) -> None:
-    """conn_key 必须存在于连接库，否则拒绝（虚构连接不可进入保存流程）。"""
-    for side, key in (("源", draft.get("source_conn_key")),
-                      ("目标", draft.get("target_conn_key"))):
+    """conn_key 必须存在于连接库，否则拒绝（虚构连接不可进入保存流程）。
+
+    流水线草稿逐个校验节点引用的连接，避免只校验顶层两键而放过中间源/目标节点。
+    """
+    keys: list[tuple[str, str]] = [("源", draft.get("source_conn_key") or ""),
+                                   ("目标", draft.get("target_conn_key") or "")]
+    for node in (draft.get("pipeline") or {}).get("nodes") or []:
+        key = (node.get("config") or {}).get("conn_key") or ""
+        if key:
+            keys.append((f"节点[{node.get('id')}]", key))
+    seen: set[str] = set()
+    for side, key in keys:
         if not key:
-            raise DraftGenerationError(f"{side}连接未指定")
+            if side in ("源", "目标") and not draft.get("pipeline"):
+                raise DraftGenerationError(f"{side}连接未指定")
+            continue
+        if key in seen:
+            continue
+        seen.add(key)
         try:
             store.get_connection(key)
         except KeyError:
@@ -327,6 +396,7 @@ def _decorate(store: Store, raw: dict, *, schema_source: str,
               inferred_fields: bool, history: list[dict[str, str]] | None = None,
               history_trimmed: bool = False,
               expression_issues: list[dict[str, str]] | None = None) -> DraftResult:
+    _backfill_from_pipeline(raw)
     _validate_connections(store, raw)
     warnings = _target_warnings(store, raw.get("target_conn_key", ""),
                                 raw.get("target_object", ""), raw.get("fields") or [])
@@ -350,6 +420,8 @@ _SESSION_SYSTEM = (
     "不得虚构连接（conn_key 必须取自给定的连接清单）；不得虚构字段"
     "（字段必须来自给定的源表结构；结构不可得时才按描述推断）；"
     "修订时保持既有字段映射稳定，仅按修订指令调整。"
+    "当需求涉及多个数据源合并、或需要多趟清洗（如先去重再聚合、先映射再过滤再排序）时，"
+    "必须用 pipeline（nodes + edges 有向无环图）表达；仅单源单目标一次映射时才省略 pipeline。"
 )
 
 # 字段规则的类型选择判据（决策 4/8：优先简单类型，不得已才用受限表达式）
@@ -372,6 +444,38 @@ _FIELDS_CONTRACT = (
     '    {"source": "源列", "target": "目标列", "kind": "constant", "constant_value": "CN"},\n'
     '    {"source": "源列", "target": "目标列", "kind": "expression", "expression": "concat(源列,\'-\',id)"}\n'
     "  ],\n"
+)
+
+
+# 流水线契约（多源合并 / 多步清洗）：供第二轮与修订轮复用，避免两份口径
+_PIPELINE_CONTRACT = (
+    "流水线（pipeline）说明：\n"
+    "- 仅当单源单目标一次字段映射时省略 pipeline（只给 fields 即可）；\n"
+    "- 多源合并或多趟清洗时必须给出 pipeline，且 fields 保留为映射摘要（便于旧界面展示）；\n"
+    "- 节点 type 取值与其配置：\n"
+    "  source_table(conn_key, object, watermark_field?) / source_sql(conn_key, sql) /\n"
+    "  source_csv(path) / source_api(conn_key, url?);\n"
+    "  union(columns 可选，留空取各入边列并集);\n"
+    "  select(rules，与 fields 同构) / filter(expression) / cast(field,target,cast_to) /\n"
+    "  expression(target,expression) / value_map(field,target,mapping,default) /\n"
+    "  null_fill(field,target,null_default) / string_ops(field,target,op) /\n"
+    "  constant(target,value) / sequence(target,start,step);\n"
+    "  sort(keys:[{field,desc}]) / unique(keys:[列]) /\n"
+    "  aggregate(group_by:[列], aggregations:[{func,field,target}]，func 取 sum/count/min/max/avg/first/last);\n"
+    "  target_table(conn_key, object, mode, primary_keys) / target_csv(path)。\n"
+    "- edges 只引用节点 id；union 至少两条入边；图必须无环；源节点只应有出边、目标节点只应有入边；\n"
+    "- 给出 pipeline 时，顶层 source/target 连接与对象可以省略（系统按首尾节点回填）。\n"
+    "示例（两源合并 → 过滤 → 去重 → 写入）：\n"
+    '{"pipeline": {"nodes": [\n'
+    '  {"id": "a", "type": "source_table", "config": {"conn_key": "src1", "object": "t1"}},\n'
+    '  {"id": "b", "type": "source_table", "config": {"conn_key": "src2", "object": "t2"}},\n'
+    '  {"id": "u", "type": "union", "config": {}},\n'
+    '  {"id": "f", "type": "filter", "config": {"expression": "amount > 0"}},\n'
+    '  {"id": "d", "type": "unique", "config": {"keys": ["id"]}},\n'
+    '  {"id": "w", "type": "target_table", "config": {"conn_key": "tgt", "object": "dw", '
+    '"mode": "upsert", "primary_keys": ["id"]}}\n'
+    '], "edges": [{"source": "a", "target": "u"}, {"source": "b", "target": "u"},\n'
+    '  {"source": "u", "target": "f"}, {"source": "f", "target": "d"}, {"source": "d", "target": "w"}]}}\n'
 )
 
 
@@ -449,8 +553,10 @@ def build_schema_turn(skeleton: Skeleton, schema: dict, source: str,
         '  "primary_keys": ["..."],\n'
         '  "incremental": {"field": "增量字段或空", "watermark_field": "水位字段或空", "first_run_policy": "all"},\n'
         f"{_FIELDS_CONTRACT}"
-        '  "schedule": ""\n'
-        "}"
+        '  "schedule": "",\n'
+        '  "pipeline": {"nodes": [...], "edges": [...]}   // 可选，见下方说明\n'
+        "}\n\n"
+        + _PIPELINE_CONTRACT
     )
 
 
@@ -460,7 +566,8 @@ def build_revise_turn(instruction: str) -> str:
         "修订指令：\n"
         f"{instruction}\n\n"
         "请基于本会话中当前的完整 TaskConfig，输出修订后的完整 TaskConfig JSON"
-        "（与当前草稿同构，未被指令涉及的字段映射保持不变）。"
+        "（与当前草稿同构，未被指令涉及的字段映射保持不变；"
+        "若当前草稿含 pipeline，则保持节点与连线结构，仅按指令调整节点配置）。"
     )
 
 
@@ -471,7 +578,8 @@ def build_revise_prompt(draft: dict, instruction: str) -> str:
         f"{json.dumps(draft, ensure_ascii=False)}\n\n"
         "修订指令：\n"
         f"{instruction}\n\n"
-        "请输出修订后的完整 TaskConfig JSON（与输入同构，保持字段映射稳定）。"
+        "请输出修订后的完整 TaskConfig JSON（与输入同构，保持字段映射稳定；"
+        "含 pipeline 时保持节点与连线结构不变，只调整被指令涉及的节点配置）。"
     )
 
 
@@ -504,11 +612,22 @@ def build_repair_turn(violations: list[str]) -> str:
 
 
 def _rules_of(raw: dict) -> list[FieldRule]:
-    """从草稿中解析字段规则；结构非法的条目跳过（交由后续校验/保存链路处理）。"""
+    """从草稿中解析字段规则；结构非法的条目跳过（交由后续校验/保存链路处理）。
+
+    字段规则既可能出现在顶层 `fields`（单源单目标），也可能出现在流水线
+    `select` 节点的 `rules` 中（多步清洗），两处都要校验表达式。
+    """
     rules: list[FieldRule] = []
-    for item in raw.get("fields") or []:
-        with contextlib.suppress(ValidationError):
-            rules.append(FieldRule.model_validate(item))
+
+    def _add(items) -> None:
+        for item in items or []:
+            with contextlib.suppress(ValidationError):
+                rules.append(FieldRule.model_validate(item))
+
+    _add(raw.get("fields"))
+    for node in (raw.get("pipeline") or {}).get("nodes") or []:
+        if str(node.get("type") or "") == "select":
+            _add((node.get("config") or {}).get("rules"))
     return rules
 
 

@@ -7,6 +7,8 @@ import tempfile
 
 from fastapi.testclient import TestClient
 
+from authhelpers import act_as
+
 
 def _client():
     tmp = tempfile.TemporaryDirectory()
@@ -24,8 +26,9 @@ def _client():
     return TestClient(app), store, tmp
 
 
-def _auth(client: TestClient, user: str):
-    client.headers["X-Synetra-User"] = user
+def _auth(client: TestClient, user: str, password: str | None = None):
+    """切到指定账号身份（真实签名的会话票据，覆盖默认管理员夹具）。"""
+    act_as(client, user, password)
 
 
 TASK_CFG = {
@@ -98,8 +101,10 @@ def test_user_lifecycle_guards_and_password():
         # 保护：不能删除/降级自己
         _auth(client, "admin")
         assert client.delete("/api/users/admin").status_code == 403
-        # 保护：仅剩一名管理员时，自停用被「最后管理员」守护拦截
-        assert client.put("/api/users/admin", json={"enabled": False}).status_code == 409
+        # 保护：自助停用返回 403（该判定优先于「最后一名管理员」的 409）
+        self_disable = client.put("/api/users/admin", json={"enabled": False})
+        assert self_disable.status_code == 403
+        assert "不能停用" in self_disable.json()["detail"]
         # 保护：仅剩一名管理员时不能降级
         assert client.put("/api/users/admin", json={"role": "developer"}).status_code == 409
         # 正常删除普通用户
@@ -130,6 +135,26 @@ def test_credential_issue_trigger_and_revoke():
         cred_id = iss.json()["cred_id"]
         assert client.post(f"/api/projects/proj-a/credentials/{cred_id}/revoke").status_code == 200
         assert client.post(f"/api/trigger/{key}", headers=h).status_code == 401
+    finally:
+        tmp.cleanup()
+
+
+def test_audit_events_admin_only_and_filtered():
+    """审计日志查询（D-09 后端部分）：仅管理员可读，支持按操作类型过滤。"""
+    client, _, tmp = _client()
+    try:
+        _auth(client, "dev")
+        assert client.get("/api/audit/events").status_code == 403
+
+        _auth(client, "admin")
+        assert client.post("/api/projects", json={"name": "audit-proj"}).status_code == 201
+        rows = client.get("/api/audit/events?action=project_create&limit=10").json()
+        assert rows, "应能查到刚刚的项目创建审计"
+        assert all(r["action"] == "project_create" for r in rows)
+        assert all(isinstance(r["detail"], dict) for r in rows)
+        # 项目过滤生效
+        scoped = client.get("/api/audit/events?project=audit-proj").json()
+        assert scoped and all(r["project"] == "audit-proj" for r in scoped)
     finally:
         tmp.cleanup()
 

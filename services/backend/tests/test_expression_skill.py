@@ -76,7 +76,13 @@ def test_lint_rejects_path_traversal_skill_name():
 # ---- 3. 与技能包内容无关的既有回归 ----
 
 def test_generated_script_namespace_same_source_as_validator():
-    """生成脚本内联的 _EXPR_NS 就是权威源码本身 → 校验器与运行时不存第二份清单。"""
+    """生成脚本走 run_pipeline 解释执行 → 运行时直接复用校验器同一命名空间，不存第二份清单。
+
+    旧实现把表达式命名空间内联渲染进脚本；改为薄入口后，命名空间只存在于
+    `app.expr.whitelist`（校验器与运行时共用的唯一来源），因此断言改为：
+    权威源码派生出的函数集合 == 运行时实际可用集合。
+    """
+    from app.etl_sdk.pipeline.engine import apply_expression
     from app.expr.whitelist import allowed_functions
     from app.models.task_config import TaskConfig
     from app.scripting.gen_config import render_config_script
@@ -84,12 +90,16 @@ def test_generated_script_namespace_same_source_as_validator():
     cfg = TaskConfig(project="p", name="t",
                      source_conn_key="s", target_conn_key="g")
     src = render_config_script(cfg)
-    assert EXPR_NAMESPACE_SOURCE in src, "生成脚本未内联权威命名空间源码"
+    # 薄入口：脚本调用运行时解释执行，不再内联表达式命名空间
+    assert "run_pipeline" in src
+    assert "_EXPR_NS" not in src
 
     scope: dict = {}
     exec(EXPR_NAMESPACE_SOURCE, scope)  # noqa: S102 - 内容为模块内常量
     assert set(scope["_EXPR_NS"]) == set(allowed_functions())
     assert len(allowed_functions()) == 16
+    # 运行时求值走同一校验器：白名单函数可用、越权写法被拒
+    assert apply_expression("upper(name)", {"name": "bob"}) == "BOB"
 
 
 def test_startup_event_records_skill_fingerprints(monkeypatch):

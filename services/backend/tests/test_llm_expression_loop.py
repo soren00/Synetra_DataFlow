@@ -12,6 +12,8 @@ import tempfile
 
 from fastapi.testclient import TestClient
 
+from authhelpers import act_as
+
 from app.core.config import get_settings
 from app.llm.provider import LLMProvider, model_info, register_provider
 from app.models.connection import (
@@ -114,7 +116,7 @@ def test_illegal_expression_is_repaired_in_same_conversation():
                               _full(src, tgt, [_BAD_FIELD]),
                               _full(src, tgt, [_GOOD_FIELD])])
             register_provider("deepseek", p)
-            client.headers["X-Synetra-User"] = "dev"
+            act_as(client, "dev")
             r = client.post("/api/llm/tasks/draft", json={"description": "同步用户", "project": "demo"})
             assert r.status_code == 200
             body = r.json()
@@ -153,7 +155,7 @@ def test_repair_is_capped_and_reports_issues():
                               _full(src, tgt, [_BAD_FIELD]),
                               _full(src, tgt, [still_bad])])
             register_provider("deepseek", p)
-            client.headers["X-Synetra-User"] = "dev"
+            act_as(client, "dev")
             r = client.post("/api/llm/tasks/draft", json={"description": "同步用户", "project": "demo"})
             assert r.status_code == 200
             body = r.json()
@@ -174,7 +176,7 @@ def test_compliant_draft_triggers_no_extra_call():
             src, tgt = _seed_conns(s, tmp.name)
             p = FakeProvider([_skeleton(src, tgt), _full(src, tgt, [_GOOD_FIELD])])
             register_provider("deepseek", p)
-            client.headers["X-Synetra-User"] = "dev"
+            act_as(client, "dev")
             r = client.post("/api/llm/tasks/draft", json={"description": "同步用户", "project": "demo"})
             assert r.status_code == 200
             assert r.json()["expression_issues"] == []
@@ -194,7 +196,7 @@ def test_repair_output_invalid_keeps_original_draft():
                               _full(src, tgt, [_BAD_FIELD]),
                               "not json", "still not json"])
             register_provider("deepseek", p)
-            client.headers["X-Synetra-User"] = "dev"
+            act_as(client, "dev")
             r = client.post("/api/llm/tasks/draft", json={"description": "同步用户", "project": "demo"})
             assert r.status_code == 200
             body = r.json()
@@ -211,7 +213,7 @@ def test_illegal_expression_not_persisted_and_fixable_in_session():
     try:
         with client:
             src, tgt = _seed_conns(s, tmp.name)
-            client.headers["X-Synetra-User"] = "dev"
+            act_as(client, "dev")
             before = len(client.get("/api/tasks").json())
 
             # ① 违规表达式直接保存 → 422 且不落库
@@ -252,7 +254,7 @@ def test_revise_round_also_checks_expressions_in_session():
                               _full(src, tgt, [_BAD_FIELD]),
                               _full(src, tgt, [_GOOD_FIELD])])
             register_provider("deepseek", p)
-            client.headers["X-Synetra-User"] = "dev"
+            act_as(client, "dev")
             r = client.post("/api/llm/tasks/draft", json={"description": "同步用户", "project": "demo"})
             body = r.json()
 
